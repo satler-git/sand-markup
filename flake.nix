@@ -119,14 +119,27 @@
             ];
           };
 
-          packages.default = craneLib.buildPackage (
-            commonArgs
-            // {
-              inherit cargoArtifacts;
-              pname = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.name;
-              version = "unstable-${self.shortRev or "dirty"}";
-            }
-          );
+          packages = rec {
+            default = sand;
+            sand = craneLib.buildPackage (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                pname = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.name;
+                version = "unstable-${self.shortRev or "dirty"}";
+              }
+            );
+
+            ci = pkgs.buildEnv {
+              name = "ci";
+              paths = with pkgs; [
+                rust-bin
+
+                typos
+                cargo-nextest
+              ];
+            };
+          };
         };
     };
 }
