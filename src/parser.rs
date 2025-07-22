@@ -35,11 +35,11 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
     fn try_from(mut pairs: Pairs<'_, Rule>) -> Result<Self, Vec<(Span, Error)>> {
         let mut ast = vec![AST {
             node: NodeKind::Top {
-                ailiases: FxHashMap::default(),
+                aliases: FxHashMap::default(),
                 children: vec![],
             },
             meta: NodeMeta {
-                ailias: None,
+                alias: None,
                 span: None,
             },
         }];
@@ -72,7 +72,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 Rule::Section => {
                     let mut inner = pair.into_inner();
 
-                    let ailias = take_ailias(&mut inner);
+                    let alias = take_alias(&mut inner);
 
                     let hashes = inner.next().unwrap().as_str();
                     let level = hashes.chars().count();
@@ -89,15 +89,15 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                             let (new_top_level, a, v) = last.take_mut_section_like().unwrap();
                             top_level = new_top_level;
 
-                            if let Some(ref ailias) = top.meta.ailias {
-                                if let Some(conflict_index) = a.insert(ailias.clone(), v.len()) {
+                            if let Some(ref alias) = top.meta.alias {
+                                if let Some(conflict_index) = a.insert(alias.clone(), v.len()) {
                                     errs.push((
                                         top.get_span().unwrap(),
-                                        anyhow!("aliases are duplicated: {ailias}"),
+                                        anyhow!("aliases are duplicated: {alias}"),
                                     ));
                                     errs.push((
                                         v[conflict_index].get_span().unwrap(),
-                                        anyhow!("aliases are duplicated: {ailias}"),
+                                        anyhow!("aliases are duplicated: {alias}"),
                                     ));
                                 }
                             }
@@ -109,12 +109,12 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     ast.push(AST {
                         meta: NodeMeta {
                             span: Some(span),
-                            ailias,
+                            alias,
                         },
                         node: NodeKind::Section {
                             level,
                             content,
-                            ailiases: FxHashMap::default(),
+                            aliases: FxHashMap::default(),
                             children: vec![],
                         },
                     });
@@ -122,7 +122,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 Rule::ApplyAll => {
                     let mut inner = pair.into_inner();
 
-                    let ailias = take_ailias(&mut inner);
+                    let alias = take_alias(&mut inner);
                     let p = inner.next().unwrap();
                     let elements = match p.as_rule() {
                         Rule::string => (None, p.as_str().into()),
@@ -149,14 +149,14 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                         },
                         meta: NodeMeta {
                             span: Some(span.clone()),
-                            ailias: ailias.clone(),
+                            alias: alias.clone(),
                         },
                     });
                 }
                 Rule::Sentences => {
                     let mut inner = pair.into_inner();
 
-                    let ailias = take_ailias(&mut inner);
+                    let alias = take_alias(&mut inner);
 
                     let sentences: Vec<_> = inner
                         .filter(|p| p.as_rule() == Rule::Sen)
@@ -166,7 +166,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     to_push_at_last = Some(AST {
                         meta: NodeMeta {
                             span: Some(span.clone()),
-                            ailias: ailias.clone(),
+                            alias: alias.clone(),
                         },
                         node: NodeKind::Sen(sentences),
                     });
@@ -199,7 +199,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     to_push_at_last = Some(AST {
                         meta: NodeMeta {
                             span: Some(span),
-                            ailias: None,
+                            alias: None,
                         },
                         node: NodeKind::Selector {
                             local,
@@ -215,15 +215,15 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 if let Some(last) = ast.last_mut() {
                     let (_, a, v) = last.take_mut_section_like().unwrap();
 
-                    if let Some(ref ailias) = to_add.meta.ailias {
-                        if let Some(conflict_index) = a.insert(ailias.clone(), v.len()) {
+                    if let Some(ref alias) = to_add.meta.alias {
+                        if let Some(conflict_index) = a.insert(alias.clone(), v.len()) {
                             errs.push((
                                 to_add.get_span().unwrap(),
-                                anyhow!("aliases are duplicated: {ailias}"),
+                                anyhow!("aliases are duplicated: {alias}"),
                             ));
                             errs.push((
                                 v[conflict_index].get_span().unwrap(),
-                                anyhow!("aliases are duplicated: {ailias}"),
+                                anyhow!("aliases are duplicated: {alias}"),
                             ));
                         }
                     }
@@ -239,15 +239,15 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             if let Some(last) = ast.last_mut() {
                 let (_, a, v) = last.take_mut_section_like().unwrap();
 
-                if let Some(ref ailias) = to_add.meta.ailias {
-                    if let Some(conflict_index) = a.insert(ailias.clone(), v.len()) {
+                if let Some(ref alias) = to_add.meta.alias {
+                    if let Some(conflict_index) = a.insert(alias.clone(), v.len()) {
                         errs.push((
                             to_add.get_span().unwrap(),
-                            anyhow!("aliases are duplicated: {ailias}"),
+                            anyhow!("aliases are duplicated: {alias}"),
                         ));
                         errs.push((
                             v[conflict_index].get_span().unwrap(),
-                            anyhow!("aliases are duplicated: {ailias}"),
+                            anyhow!("aliases are duplicated: {alias}"),
                         ));
                     }
                 }
@@ -281,12 +281,12 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
     }
 }
 
-type Ailias = FxHashMap<String, usize>;
+type Alias = FxHashMap<String, usize>;
 
 #[derive(Debug)]
 pub struct NodeMeta {
     span: Option<Span>,
-    ailias: Option<String>,
+    alias: Option<String>,
 }
 
 #[derive(Debug)]
@@ -302,11 +302,11 @@ pub enum NodeKind {
     Section {
         level: usize,
         content: String,
-        ailiases: Ailias,
+        aliases: Alias,
         children: Vec<AST>,
     },
     Top {
-        ailiases: Ailias,
+        aliases: Alias,
         children: Vec<AST>,
     },
     /// local, paths, last dot
@@ -323,26 +323,26 @@ pub struct AST {
     pub meta: NodeMeta,
 }
 
-fn take_ailias(inner: &mut Pairs<'_, Rule>) -> Option<String> {
-    let ailias = inner
+fn take_alias(inner: &mut Pairs<'_, Rule>) -> Option<String> {
+    let alias = inner
         .peek()
         .filter(|p| p.as_rule() == Rule::Ident)
         .map(|p| p.as_str().to_string());
-    if ailias.is_some() {
+    if alias.is_some() {
         inner.next();
     }
-    ailias
+    alias
 }
 
 impl AST {
-    fn take_mut_section_like(&mut self) -> Option<(usize, &mut Ailias, &mut Vec<AST>)> {
+    fn take_mut_section_like(&mut self) -> Option<(usize, &mut Alias, &mut Vec<AST>)> {
         match &mut self.node {
             NodeKind::Top {
-                ailiases: a,
+                aliases: a,
                 children: v,
             } => Some((0, a, v)),
             NodeKind::Section {
-                ailiases: a,
+                aliases: a,
                 children: v,
                 content: _,
                 level: d,
