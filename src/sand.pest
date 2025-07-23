@@ -7,14 +7,14 @@ WHITESPACE = _{ " " | "\t" }
 string  = @{ char+ }
 escaped = _{ ("]" | "\\" | "}") }
 char    =  {
-    !(escaped) ~ ANY
-  | "\\" ~ (escaped | "/" | "n" | "r" | "t")
+    "\\" ~ (escaped | "/" | "n" | "r" | "t")
+  | !(escaped) ~ ANY
 }
 
 non_escaped_string = @{ non_escaped_char+ }
 non_escaped_char   =  {
-    !("#" | "\\") ~ ANY
-  | "\\" ~ ("#" | "\\" | "/" | "n" | "r" | "t")
+    "\\" ~ ("#" | "\\" | "/" | "n" | "r" | "t")
+  | !("#" | "\\") ~ ANY
 }
 
 Ident      = @{ ASCII_ALPHANUMERIC+ }
@@ -23,7 +23,8 @@ Ident_list =  { Ident ~ ("," ~ Ident)* }
 PartName = { "#(" ~ Ident_list ~ ")" }
 
 one_line_str = @{ (!NEWLINE ~ char)+ }
-Section      =  { "#" ~ Ident? ~ "#"+ ~ one_line_str ~ (NEWLINE | EOI) }
+hashes       =  { "#"+ }
+Section      =  { "#" ~ Ident? ~ hashes ~ one_line_str ~ (NEWLINE) }
 
 All      = { "all" }
 Idents   = { "[" ~ Ident_list ~ "]" }
@@ -32,4 +33,6 @@ ApplyAll = { "#" ~ Ident? ~ "{" ~ ((All | Idents) ~ ",")? ~ "{" ~ string ~ "}" ~
 Sen       = { "[" ~ string ~ "]" }
 Sentences = { "#" ~ Ident? ~ Sen+ }
 
-Selector = { "#." ~ "/"? ~ Ident? ~ ("." ~ Ident)* ~ "."? }
+Slash    = { "/" }
+LastDot  = { "." }
+Selector = { "#." ~ Slash? ~ (Ident ~ ("." ~ Ident)* ~ LastDot?)? }
