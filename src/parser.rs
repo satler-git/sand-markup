@@ -90,16 +90,14 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                             top_level = new_top_level;
 
                             if let Some(ref alias) = top.meta.alias {
-                                if let Some(conflict_index) = a.insert(alias.clone(), v.len()) {
-                                    errs.push((
-                                        top.get_span().unwrap(),
-                                        anyhow!("aliases are duplicated: {alias}"),
-                                    ));
-                                    errs.push((
-                                        v[conflict_index].get_span().unwrap(),
-                                        anyhow!("aliases are duplicated: {alias}"),
-                                    ));
-                                }
+                                check_alias_conflict(
+                                    alias,
+                                    a,
+                                    v,
+                                    v.len(),
+                                    top.get_span().unwrap(),
+                                    &mut errs,
+                                );
                             }
 
                             v.push(top);
@@ -216,16 +214,14 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     let (_, a, v) = last.take_mut_section_like().unwrap();
 
                     if let Some(ref alias) = to_add.meta.alias {
-                        if let Some(conflict_index) = a.insert(alias.clone(), v.len()) {
-                            errs.push((
-                                to_add.get_span().unwrap(),
-                                anyhow!("aliases are duplicated: {alias}"),
-                            ));
-                            errs.push((
-                                v[conflict_index].get_span().unwrap(),
-                                anyhow!("aliases are duplicated: {alias}"),
-                            ));
-                        }
+                        check_alias_conflict(
+                            alias,
+                            a,
+                            v,
+                            v.len(),
+                            to_add.get_span().unwrap(),
+                            &mut errs,
+                        );
                     }
 
                     v.push(to_add);
@@ -240,16 +236,14 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 let (_, a, v) = last.take_mut_section_like().unwrap();
 
                 if let Some(ref alias) = to_add.meta.alias {
-                    if let Some(conflict_index) = a.insert(alias.clone(), v.len()) {
-                        errs.push((
-                            to_add.get_span().unwrap(),
-                            anyhow!("aliases are duplicated: {alias}"),
-                        ));
-                        errs.push((
-                            v[conflict_index].get_span().unwrap(),
-                            anyhow!("aliases are duplicated: {alias}"),
-                        ));
-                    }
+                    check_alias_conflict(
+                        alias,
+                        a,
+                        v,
+                        v.len(),
+                        to_add.get_span().unwrap(),
+                        &mut errs,
+                    );
                 }
 
                 v.push(to_add);
@@ -332,6 +326,23 @@ fn take_alias(inner: &mut Pairs<'_, Rule>) -> Option<String> {
         inner.next();
     }
     alias
+}
+
+fn check_alias_conflict(
+    alias: &str,
+    aliases: &mut FxHashMap<String, usize>,
+    children: &[AST],
+    new_index: usize,
+    new_span: Span,
+    errs: &mut Vec<(Span, Error)>,
+) {
+    if let Some(conflict_index) = aliases.insert(alias.to_string(), new_index) {
+        errs.push((new_span, anyhow!("aliases are duplicated: {}", alias)));
+        errs.push((
+            children[conflict_index].get_span().unwrap(),
+            anyhow!("aliases are duplicated: {}", alias),
+        ));
+    }
 }
 
 impl AST {
