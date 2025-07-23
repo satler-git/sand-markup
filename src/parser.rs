@@ -1,4 +1,3 @@
-use anyhow::{Error, anyhow};
 use pest::iterators::Pairs;
 use pest_derive::Parser;
 use rustc_hash::FxHashMap;
@@ -28,11 +27,23 @@ impl From<pest::Span<'_>> for Span {
     }
 }
 
-// TODO: エラーを作る
-impl TryFrom<Pairs<'_, Rule>> for Document {
-    type Error = Vec<(Span, Error)>;
+use thiserror::Error;
+#[derive(Error, Debug)]
+pub enum ParseError {
+    #[error("names are defined more than once")]
+    DuplicateNames(Span),
+    #[error("aliases are duplicated: {0}")]
+    DuplicateAlias(String, Span),
+    #[error("aliases and names are conflicted: {0}")]
+    AliasConflictWithNames(String, Span),
+    #[error("names are not defined")]
+    MissingNames,
+}
 
-    fn try_from(mut pairs: Pairs<'_, Rule>) -> Result<Self, Vec<(Span, Error)>> {
+impl TryFrom<Pairs<'_, Rule>> for Document {
+    type Error = Vec<ParseError>;
+
+    fn try_from(mut pairs: Pairs<'_, Rule>) -> Result<Self, Vec<ParseError>> {
         let mut ast = vec![AST {
             node: NodeKind::Top {
                 aliases: FxHashMap::default(),
@@ -57,7 +68,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             match pair.as_rule() {
                 Rule::PartName => {
                     if names.is_some() {
-                        errs.push((span, anyhow!("names are defined more than once")));
+                        errs.push(ParseError::DuplicateNames(span)); // TODO: これだとdupのと一貫性がないかも
                     }
                     let ident_list_pair = pair.into_inner().next().unwrap();
 
@@ -251,7 +262,24 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
         }
 
         if let Some(names) = &names {
-            // TODO: エイリアスを走査してnamesと被ってないかチェック
+            fn check_conflict_with_names(names: &Vec<String>, ast: &AST) -> Vec<(Span, String)> {
+                let (alias, children) = ast.take_section_like().unwrap();
+                let mut v = vec![];
+                for n in names {
+                    if let Some(index) = alias.get(n) {
+                        v.push((children[*index].get_span().unwrap(), n.clone()));
+                    }
+                }
+                for p in children {
+                    if let NodeKind::Section { .. } = &p.node {
+                        v.extend(check_conflict_with_names(names, p));
+                    }
+                }
+                vec![]
+            }
+            for (span, name) in check_conflict_with_names(names, &ast[0]) {
+                errs.push(ParseError::AliasConflictWithNames(name, span));
+            }
         }
 
         // TODO: Selectorの妥当性
@@ -260,7 +288,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             names
         } else {
             // エラーを追加してからのほうが優しい
-            errs.push((Span { start: 0, end: 0 }, anyhow!("names are not defined")));
+            errs.push(ParseError::MissingNames);
             return Err(errs);
         };
 
@@ -334,13 +362,15 @@ fn check_alias_conflict(
     children: &[AST],
     new_index: usize,
     new_span: Span,
-    errs: &mut Vec<(Span, Error)>,
+    errs: &mut Vec<ParseError>,
 ) {
     if let Some(conflict_index) = aliases.insert(alias.to_string(), new_index) {
-        errs.push((new_span, anyhow!("aliases are duplicated: {}", alias)));
-        errs.push((
+        errs.push(ParseError::DuplicateAlias(alias.to_string(), new_span));
+        // TODO:
+        // これだと複数回被ったときに最初と最後以外、2重のエラーが出る
+        errs.push(ParseError::DuplicateAlias(
+            alias.to_string(),
             children[conflict_index].get_span().unwrap(),
-            anyhow!("aliases are duplicated: {}", alias),
         ));
     }
 }
@@ -358,6 +388,21 @@ impl AST {
                 content: _,
                 level: d,
             } => Some((*d, a, v)),
+            _ => None,
+        }
+    }
+
+    fn take_section_like(&self) -> Option<(&Alias, &Vec<AST>)> {
+        match &self.node {
+            NodeKind::Top {
+                aliases: a,
+                children: v,
+            } => Some((a, v)),
+            NodeKind::Section {
+                aliases: a,
+                children: v,
+                ..
+            } => Some((a, v)),
             _ => None,
         }
     }
