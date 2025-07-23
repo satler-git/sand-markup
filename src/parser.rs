@@ -1,6 +1,6 @@
 use pest::iterators::Pairs;
 use pest_derive::Parser;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 #[derive(Parser)]
 #[grammar = "sand.pest"]
@@ -8,8 +8,8 @@ pub struct SandParser;
 
 #[derive(Debug)]
 pub struct Document {
-    names: Vec<String>,
-    ast: AST,
+    pub names: Vec<String>,
+    pub ast: AST,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +31,9 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("names are defined more than once")]
-    DuplicateNames(Span),
+    MultipleNameDefine(Span),
+    #[error("the same names are defined more than once: {0}")]
+    DuplicateNames(String, Span),
     #[error("aliases are duplicated: {0}")]
     DuplicateAlias(String, Span),
     #[error("aliases and names are conflicted: {0}")]
@@ -40,6 +42,71 @@ pub enum ParseError {
     MissingNames,
 }
 
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+
+pub fn convert_parse_error(file_id: usize, err: &ParseError) -> Diagnostic<usize> {
+    match err {
+        ParseError::MultipleNameDefine(span) => Diagnostic::error()
+            .with_message("names are defined more than once")
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end)
+                    .with_message("this is a repeated definition"),
+            ]),
+        ParseError::DuplicateNames(name, span) => Diagnostic::error()
+            .with_message(format!("duplicate name: `{name}`"))
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end).with_message("duplicate name here"),
+            ]),
+        ParseError::DuplicateAlias(name, span) => Diagnostic::error()
+            .with_message(format!("duplicate alias: `{name}`"))
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end).with_message("duplicate alias here"),
+            ]),
+        ParseError::AliasConflictWithNames(name, span) => Diagnostic::error()
+            .with_message(format!("alias `{name}` conflicts with a name"))
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end)
+                    .with_message("this alias conflicts with a name"),
+            ]),
+        ParseError::MissingNames => Diagnostic::error().with_message("names are not defined"),
+    }
+}
+
+pub fn convert_pest_error(file_id: usize, error: pest::error::Error<Rule>) -> Diagnostic<usize> {
+    use pest::error::ErrorVariant;
+
+    let span = {
+        let (start, end) = match error.location {
+            pest::error::InputLocation::Pos(pos) => (pos, pos + 1),
+            pest::error::InputLocation::Span((s, e)) => (s, e),
+        };
+        Span { start, end }
+    };
+
+    match error.variant {
+        ErrorVariant::ParsingError {
+            positives,
+            negatives,
+        } => {
+            let mut msg = String::from("failed to parse input");
+            if !positives.is_empty() {
+                msg += &format!(", expected: {positives:?}");
+            }
+            if !negatives.is_empty() {
+                msg += &format!(", not: {negatives:?}");
+            }
+
+            Diagnostic::error()
+                .with_message(msg)
+                .with_labels(vec![Label::primary(file_id, span.start..span.end)])
+        }
+        ErrorVariant::CustomError { message } => Diagnostic::error()
+            .with_message(message)
+            .with_labels(vec![Label::primary(file_id, span.start..span.end)]),
+    }
+}
+
+// TODO: validateでエラーをまとめて出す
 impl TryFrom<Pairs<'_, Rule>> for Document {
     type Error = Vec<ParseError>;
 
@@ -68,17 +135,24 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             match pair.as_rule() {
                 Rule::PartName => {
                     if names.is_some() {
-                        errs.push(ParseError::DuplicateNames(span)); // TODO: これだとdupのと一貫性がないかも
+                        errs.push(ParseError::MultipleNameDefine(span.clone())); // TODO: これだとdupのと一貫性がないかも
                     }
                     let ident_list_pair = pair.into_inner().next().unwrap();
 
-                    names = Some(
-                        ident_list_pair
-                            .into_inner()
-                            .filter(|p| p.as_rule() == Rule::Ident)
-                            .map(|p| p.as_str().to_string())
-                            .collect(),
-                    );
+                    let raw_names: Vec<String> = ident_list_pair
+                        .into_inner()
+                        .filter(|p| p.as_rule() == Rule::Ident)
+                        .map(|p| p.as_str().to_string())
+                        .collect();
+
+                    let mut seen = FxHashSet::default();
+                    for name in &raw_names {
+                        if !seen.insert(name.clone()) {
+                            errs.push(ParseError::DuplicateNames(name.clone(), span.clone()));
+                        }
+                    }
+
+                    names = Some(raw_names);
                 }
                 Rule::Section => {
                     let mut inner = pair.into_inner();
@@ -275,7 +349,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                         v.extend(check_conflict_with_names(names, p));
                     }
                 }
-                vec![]
+                v
             }
             for (span, name) in check_conflict_with_names(names, &ast[0]) {
                 errs.push(ParseError::AliasConflictWithNames(name, span));
@@ -414,90 +488,106 @@ impl AST {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::{Document, Rule, SandParser};
+
+    use crate::parser::{Document, ParseError, Rule, SandParser};
     use pest::Parser as _;
 
+    /// Helper to parse input into Document or capture errors.
+    fn parse_doc(input: &str) -> Result<Document, Vec<ParseError>> {
+        let pairs = SandParser::parse(Rule::doc, input).unwrap();
+        pairs.try_into()
+    }
+
     #[test]
-    fn simple_parse() -> Result<(), Box<dyn std::error::Error>> {
-        let parsed = SandParser::parse(
-            // TODO: 個分け
-            Rule::doc,
-            r#"
+    fn simple_parse() {
+        let doc = r#"
 #(en, ja)
 
-つまり何個でも伸ばせる。ただしこの定義は一つ。先頭にあるといい
+## Title
+Content
+"#;
+        assert!(parse_doc(doc).is_ok(), "Expected simple doc to parse");
+    }
 
-#sentence## 文
-
-markdownへの変換のみに関連するaliasつきのセクション
-
-#s1[
-	Thank you!
-][
-	ありがとう！
-]
-
-### セレクター
-
-エイリアスなし
-\#\# セレクター
-
-#s2[
-	I am sleepy.
-][
-	眠いです。
-]
-
-#.sentence.s1. に関連するんだけどさ〜(ここでKかgdで情報表示)。#.sentence.s1.ja 違う
-
-トップレベルのja, enみたいなのは省略可能(すべてを指す)
-
-#.
-これで全ての文書
-#.en
-英文全体
-#.ja
-ここでは日本語文全体
-
-#./s2. みたいにして相対
-
-#[
-	I got it.
-][
-	よし！
-]
-
-#./0.ja のようにもできる。./は最初の.のあとにだけ可能性がある。
-セクションごとに0-indexedにふる。補完を出したい。
-
-#{{ \n }}
-
-みたいにすることで全体に適用できる。[]の中は改行もtrimするから、改行をいれるには\nがいる。
-
-#{{ \n }}
-
-は
-
-#{all, { \n }}
-
-に意味的に等しく、
-
-#{[ja], { \n }}
-
-ともできる
-            "#,
+    #[test]
+    fn missing_names_error() {
+        let doc = r#"
+## Section without names
+Content
+"#;
+        let err = parse_doc(doc).unwrap_err();
+        assert!(
+            matches!(err.as_slice(), [ParseError::MissingNames]),
+            "Expected MissingNames error"
         );
+    }
 
-        match parsed {
-            Ok(p) => {
-                let a: Result<Document, _> = dbg!(p.try_into());
-                assert!(a.is_ok())
-            }
-            Err(ref e) => {
-                eprintln!("{e}");
-                parsed?;
-            }
-        }
-        Ok(())
+    #[test]
+    fn duplicate_names_error() {
+        let doc = r#"
+#(en, en)
+## Section
+Content
+"#;
+        let errs = parse_doc(doc).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, ParseError::DuplicateNames(name, _) if name == "en")),
+            "Expected DuplicateNames error"
+        );
+    }
+
+    #[test]
+    fn duplicate_alias_error() {
+        let doc = r#"
+#(en)
+#s1[One][一]
+#s1[Two][二]
+"#;
+        let errs = parse_doc(doc).unwrap_err();
+        assert!(
+            errs.iter()
+                .filter(|e| matches!(e, ParseError::DuplicateAlias(_, _)))
+                .count()
+                >= 1,
+            "Expected at least one DuplicateAlias error"
+        );
+    }
+
+    #[test]
+    fn alias_conflict_with_names() {
+        // alias 'en' conflicts with declared name 'en'
+        let doc = r#"
+#(en, ja)
+
+#en[Test][テスト]
+"#;
+        let errs = parse_doc(doc).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, ParseError::AliasConflictWithNames(..))),
+            "Expected AliasConflictWithNames for 'en'"
+        );
+    }
+
+    #[test]
+    fn parse_apply_all_and_sentences_and_selector() {
+        let doc = r#"
+#(en)
+#hello# Section
+
+A section.
+
+#{all, { content }}
+
+#sents[One][Two]
+
+#.hello.sents.en
+"#;
+        let result = parse_doc(doc);
+        assert!(
+            result.is_ok(),
+            "Expected apply-all, sentences, and selector to parse correctly"
+        );
     }
 }
