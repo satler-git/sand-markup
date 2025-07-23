@@ -50,6 +50,12 @@ pub fn convert_parse_error(file_id: usize, err: &ParseError) -> Diagnostic<usize
                 Label::primary(file_id, span.start..span.end)
                     .with_message("this alias conflicts with a name"),
             ]),
+        ParseError::Selector(sel, span) => Diagnostic::error()
+            .with_message(format!("selector syntax is incorrect: {sel}"))
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end)
+                    .with_message("selector syntax is incorrect"),
+            ]),
         ParseError::MissingNames => Diagnostic::error().with_message("names are not defined"),
     }
 }

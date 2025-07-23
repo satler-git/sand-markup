@@ -40,6 +40,18 @@ pub enum ParseError {
     AliasConflictWithNames(String, Span),
     #[error("names are not defined")]
     MissingNames,
+    #[error("selector is incorrect: {0}")]
+    Selector(SelectorError, Span),
+}
+
+#[derive(Error, Debug)]
+pub enum SelectorError {
+    #[error("the last keyword is not dot or names")]
+    LastIsNotDotOrName,
+    #[error("the number points outside the index.")]
+    OutOfIndex,
+    #[error("neither a number nor an alias: {0}")]
+    Neither(String),
 }
 
 // TODO: validateでエラーをまとめて出す
@@ -292,7 +304,75 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             }
         }
 
-        // TODO: Selectorの妥当性
+        // Selectorの妥当性
+        if let Some(names) = &names {
+            fn check_selector(names: &Vec<String>, top_ast: &AST, ast: &AST) -> Vec<ParseError> {
+                let (_, children) = ast.take_section_like().unwrap();
+                let mut v = vec![];
+                for p in children {
+                    if let NodeKind::Selector {
+                        local,
+                        path,
+                        trailing_dot,
+                    } = &p.node
+                    {
+                        let range = if !trailing_dot && !path.is_empty() {
+                            if !names.contains(path.last().unwrap()) {
+                                v.push(ParseError::Selector(
+                                    SelectorError::LastIsNotDotOrName,
+                                    p.get_span().unwrap(),
+                                ));
+                            }
+                            0..(path.len() - 1)
+                        } else {
+                            0..(path.len())
+                        };
+
+                        let mut curr = if *local { ast } else { top_ast };
+
+                        for k in &path[range] {
+                            if matches!(curr.node, NodeKind::Sen { .. })
+                                || matches!(curr.node, NodeKind::All { .. })
+                            {
+                                break;
+                            }
+                            let (alias, children) = curr.take_section_like().unwrap();
+                            let children_without_sel: Vec<&AST> = children
+                                .iter()
+                                .filter(|p| !matches!(&p.node, NodeKind::Selector { .. }))
+                                .collect();
+
+                            if let Some(index) = alias.get(k) {
+                                curr = children_without_sel[*index];
+                            } else if let Ok(index) = k.parse::<usize>() {
+                                if index >= children_without_sel.len() {
+                                    v.push(ParseError::Selector(
+                                        SelectorError::OutOfIndex,
+                                        p.get_span().unwrap(),
+                                    ));
+                                    break;
+                                } else {
+                                    curr = children_without_sel[index];
+                                }
+                            } else {
+                                v.push(ParseError::Selector(
+                                    SelectorError::Neither(k.clone()),
+                                    p.get_span().unwrap(),
+                                ));
+                                break;
+                            }
+                        }
+                    }
+
+                    if let NodeKind::Section { .. } = &p.node {
+                        v.extend(check_selector(names, top_ast, p));
+                    }
+                }
+                v
+            }
+
+            errs.extend(check_selector(names, &ast[0], &ast[0]));
+        }
 
         let names = if let Some(names) = names {
             names
