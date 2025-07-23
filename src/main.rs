@@ -21,6 +21,7 @@ enum Command {
         #[arg(value_name = "FILE", value_parser)]
         input: PathBuf,
     },
+    Lsp,
 }
 
 fn convert_to_doc_displaying_errs(input: &str, path: &Path) -> Document {
@@ -76,6 +77,16 @@ async fn main() -> Result<()> {
 
             let doc = convert_to_doc_displaying_errs(&contents, &input);
             println!("{doc:?}");
+        }
+        Command::Lsp => {
+            use sand::lsp::SandServer;
+            use tower_lsp::{LspService, Server};
+
+            let stdin = tokio::io::stdin();
+            let stdout = tokio::io::stdout();
+
+            let (service, socket) = LspService::new(|client| SandServer::new(client));
+            Server::new(stdin, stdout, socket).serve(service).await;
         }
     }
 
