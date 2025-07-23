@@ -109,22 +109,19 @@ impl SandServer {
         use crate::parser::{Document, Rule, SandParser};
         use pest::Parser as _;
 
-        let pairs = SandParser::parse(Rule::doc, &text);
+        let pairs = SandParser::parse(Rule::doc, text);
 
         let mut diagnostics = vec![];
 
         match pairs {
             Err(parsing_error) => {
-                diagnostics.push(convert_pest_error_to_diagnostic(&text, parsing_error));
+                diagnostics.push(convert_pest_error_to_diagnostic(text, parsing_error));
             }
             Ok(pairs) => {
                 let doc: std::result::Result<Document, _> = pairs.try_into();
 
-                match doc {
-                    Err(errs) => {
-                        diagnostics.extend(convert_parse_errors_to_diagnostics(&text, errs));
-                    }
-                    _ => {}
+                if let Err(errs) = doc {
+                    diagnostics.extend(convert_parse_errors_to_diagnostics(text, errs));
                 }
             }
         }
@@ -204,7 +201,7 @@ impl LanguageServer for SandServer {
             self.client
                 .log_message(
                     MessageType::INFO,
-                    format!("file changed: {} (version: {})", uri, version),
+                    format!("file changed: {uri} (version: {version})"),
                 )
                 .await;
 
