@@ -48,13 +48,22 @@
           rust-bin = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (crane.mkLib pkgs).overrideToolchain rust-bin;
 
+          unfilteredRoot = ./.; # The original, unfiltered source
+          src = lib.fileset.toSource {
+            root = unfilteredRoot;
+            fileset = lib.fileset.unions [
+              (craneLib.fileset.commonCargoSources unfilteredRoot)
+              (lib.fileset.fileFilter (file: file.hasExt "pest") unfilteredRoot)
+            ];
+          };
+
           commonArgs = {
-            src = craneLib.cleanCargoSource ./.;
+            inherit src;
             strictDeps = true;
 
-            buildInputs = with pkgs; [ ];
-
-            nativeBuildInputs = with pkgs; [ ];
+            # buildInputs = with pkgs; [ ];
+            #
+            # nativeBuildInputs = with pkgs; [ ];
           };
 
           cargoArtifacts = craneLib.buildDepsOnly (
