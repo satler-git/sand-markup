@@ -23,7 +23,7 @@ Ident_list =  { Ident ~ ("," ~ Ident)* }
 PartName = { "#(" ~ Ident_list ~ ")" }
 
 one_line_str = @{ (!NEWLINE ~ char)+ }
-hashes       =  { "#"+ }
+hashes       = @{ "#"+ }
 Section      =  { "#" ~ Ident? ~ hashes ~ one_line_str ~ (NEWLINE) }
 
 All      = { "all" }
