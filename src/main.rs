@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use sand::parser::Document;
+use sand::parser::{Document, ParseError, Span};
 
 use std::path::{Path, PathBuf};
 use tokio::{fs::File, io::AsyncReadExt};
@@ -24,13 +24,80 @@ enum Command {
     Lsp,
 }
 
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+
+pub fn convert_parse_error(file_id: usize, err: &ParseError) -> Diagnostic<usize> {
+    match err {
+        ParseError::MultipleNameDefine(span) => Diagnostic::error()
+            .with_message("names are defined more than once")
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end)
+                    .with_message("this is a repeated definition"),
+            ]),
+        ParseError::DuplicateNames(name, span) => Diagnostic::error()
+            .with_message(format!("duplicate name: `{name}`"))
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end).with_message("duplicate name here"),
+            ]),
+        ParseError::DuplicateAlias(name, span) => Diagnostic::error()
+            .with_message(format!("duplicate alias: `{name}`"))
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end).with_message("duplicate alias here"),
+            ]),
+        ParseError::AliasConflictWithNames(name, span) => Diagnostic::error()
+            .with_message(format!("alias `{name}` conflicts with a name"))
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end)
+                    .with_message("this alias conflicts with a name"),
+            ]),
+        ParseError::MissingNames => Diagnostic::error().with_message("names are not defined"),
+    }
+}
+
+pub fn convert_pest_error(
+    file_id: usize,
+    error: pest::error::Error<sand::parser::Rule>,
+) -> Diagnostic<usize> {
+    use pest::error::ErrorVariant;
+
+    let span = {
+        let (start, end) = match error.location {
+            pest::error::InputLocation::Pos(pos) => (pos, pos + 1),
+            pest::error::InputLocation::Span((s, e)) => (s, e),
+        };
+        Span { start, end }
+    };
+
+    match error.variant {
+        ErrorVariant::ParsingError {
+            positives,
+            negatives,
+        } => {
+            let mut msg = String::from("failed to parse input");
+            if !positives.is_empty() {
+                msg += &format!(", expected: {positives:?}");
+            }
+            if !negatives.is_empty() {
+                msg += &format!(", not: {negatives:?}");
+            }
+
+            Diagnostic::error()
+                .with_message(msg)
+                .with_labels(vec![Label::primary(file_id, span.start..span.end)])
+        }
+        ErrorVariant::CustomError { message } => Diagnostic::error()
+            .with_message(message)
+            .with_labels(vec![Label::primary(file_id, span.start..span.end)]),
+    }
+}
+
 fn convert_to_doc_displaying_errs(input: &str, path: &Path) -> Document {
     use codespan_reporting::{
         files::SimpleFiles,
         term::{Config, emit, termcolor},
     };
     use pest::Parser as _;
-    use sand::parser::{Rule, SandParser, convert_parse_error, convert_pest_error};
+    use sand::parser::{Rule, SandParser};
 
     let pairs = SandParser::parse(Rule::doc, input);
 
