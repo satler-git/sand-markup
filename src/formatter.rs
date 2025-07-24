@@ -30,7 +30,7 @@ pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
         vec![
             to_plain(target_ast, (target_name, &doc.names[target_name]))
                 .lines()
-                .map(|s| trim(s))
+                .map(trim)
                 .collect::<Vec<_>>()
                 .join("\n"),
         ]
@@ -41,7 +41,7 @@ pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
             .map(|(index, name)| {
                 to_plain(target_ast, (index, name))
                     .lines()
-                    .map(|s| trim(s))
+                    .map(trim)
                     .collect::<Vec<_>>()
                     .join("\n")
             })
