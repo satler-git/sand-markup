@@ -408,24 +408,6 @@ impl LanguageServer for SandServer {
             .await;
     }
 
-    /// Provides hover information for a given position in a Sand document.
-    ///
-    /// Returns context-sensitive documentation in markdown format based on the AST node at the hover position. The hover content may include explanations for sentences, apply-all constructs, sections, or selectors, with selector nodes rendered using the plain formatter and accompanied by detailed documentation.
-    ///
-    /// # Returns
-    ///
-    /// An `Option<Hover>` containing markdown documentation relevant to the AST node under the cursor, or `None` if no suitable node is found.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the document cannot be parsed or is not found in the server's document map.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// // Within an LSP client, hovering over a Sand language construct
-    /// // will display context-aware documentation in the editor.
-    /// ```
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         use tower_lsp::jsonrpc::{Error, ErrorCode};
 
