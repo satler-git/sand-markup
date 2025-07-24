@@ -187,9 +187,16 @@ impl SandServer {
             data: None,
         })?;
 
-        pairs.try_into().map_err(|_: Vec<ParseError>| Error {
+        pairs.try_into().map_err(|errs: Vec<ParseError>| Error {
             code: ErrorCode::ParseError,
-            message: "something were wrong".into(),
+            message: format!(
+                "Parse validation failed: {}",
+                errs.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+            .into(),
             data: None,
         })
     }
