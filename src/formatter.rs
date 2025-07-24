@@ -27,12 +27,24 @@ impl TryFrom<(&Document, Pairs<'_, Rule>)> for Selector {
 pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
     let (target_ast, target_name) = select(doc, sel);
     if let Some(target_name) = target_name {
-        vec![to_plain(target_ast, (target_name, &doc.names[target_name]))]
+        vec![
+            to_plain(target_ast, (target_name, &doc.names[target_name]))
+                .lines()
+                .map(|s| trim(s))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ]
     } else {
         doc.names
             .iter()
             .enumerate()
-            .map(|(index, name)| to_plain(target_ast, (index, name)))
+            .map(|(index, name)| {
+                to_plain(target_ast, (index, name))
+                    .lines()
+                    .map(|s| trim(s))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
             .collect()
     }
 }
@@ -82,7 +94,6 @@ fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
 
     match &ast.node {
         crate::parser::NodeKind::Sen(v) => {
-            s += " ";
             s += &normalize(&trim(&v[name_i]));
         }
         crate::parser::NodeKind::All {
@@ -92,7 +103,6 @@ fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
             if all_or_names.is_none()
                 || all_or_names.as_ref().map(|v| v.iter().any(|e| e == name)) == Some(true)
             {
-                s += " ";
                 s += &normalize(&trim(content));
             }
         }
@@ -110,7 +120,7 @@ fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
         _ => {}
     }
 
-    s.trim().into()
+    s
 }
 
 fn trim(s: &str) -> String {
@@ -122,8 +132,6 @@ fn normalize(s: &str) -> String {
         .replace("\\\\", "\\")
         .replace("\\/", "/")
         .replace("\\n", "\n")
-        .replace("\\r", "\r")
-        .replace("\\t", "\t")
         .replace("\\]", "]")
         .replace("\\}", "}")
 }
