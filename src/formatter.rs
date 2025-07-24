@@ -35,13 +35,6 @@ impl TryFrom<(&Document, Pairs<'_, Rule>)> for Selector {
 ///
 /// # Returns
 /// A vector of rendered strings, each representing a section of the document.
-///
-/// # Examples
-///
-/// ```
-/// let output = render_plain(&doc, &selector, true);
-/// assert!(!output.is_empty());
-/// ```
 pub fn render_plain(doc: &Document, sel: &Selector, markdown: bool) -> Vec<String> {
     let (target_ast, target_name) = select(doc, sel);
     if let Some(target_name) = target_name {
@@ -119,14 +112,8 @@ fn select<'a>(doc: &'a Document, sel: &'a Selector) -> (&'a AST, Option<usize>) 
 
 /// Converts an AST node and its descendants to a plain text or Markdown-formatted string for a given name index and name.
 ///
-/// If `markdown` is true, section nodes are rendered as Markdown headers with appropriate heading levels. Otherwise, content is concatenated as plain text. Only content matching the specified name is included for nodes with named content.
-///
-/// # Examples
-///
-/// ```
-/// let output = to_plain(ast, (0, "Introduction"), true);
-/// assert!(output.contains("# Introduction"));
-/// ```
+/// If `markdown` is true, section nodes are rendered as Markdown headers with appropriate heading levels.
+/// Otherwise, content is concatenated as plain text. Only content matching the specified name is included for nodes with named content.
 fn to_plain(ast: &AST, (name_i, name): (usize, &str), markdown: bool) -> String {
     let mut s = String::new();
 
@@ -197,12 +184,12 @@ mod tests {
         assert_eq!(
             trim(
                 r#"
-I'm very happy!!
+I'm thrilled!!
     It's because??
     I like you!
         "#
             ),
-            "I'm very happy!! It's because?? I like you!".to_string()
+            "I'm thrilled!! It's because?? I like you!".to_string()
         );
 
         Ok(())
