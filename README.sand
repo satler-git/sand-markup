@@ -57,6 +57,8 @@ sand out \#.en --markdown --input README.md
 
 #select#Select
 
+セレクターはドキュメントにアクセスするための構文です。
+
 #s1[
     Hey from Sand.
 ][

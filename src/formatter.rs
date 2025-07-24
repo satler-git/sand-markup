@@ -167,12 +167,17 @@ fn trim(s: &str) -> String {
 }
 
 fn normalize(s: &str) -> String {
-    s.replace("\\#", "#")
-        .replace("\\\\", "\\")
-        .replace("\\/", "/")
-        .replace("\\n", "\n")
-        .replace("\\]", "]")
-        .replace("\\}", "}")
+    let re = regex::Regex::new(r"\\(.)").unwrap();
+    re.replace_all(s, |caps: &regex::Captures| match &caps[1] {
+        "n" => "\n".to_string(),
+        "#" => "#".to_string(),
+        "/" => "/".to_string(),
+        "]" => "]".to_string(),
+        "}" => "}".to_string(),
+        "\\" => "\\".to_string(),
+        other => format!("\\{}", other),
+    })
+    .into_owned()
 }
 
 #[cfg(test)]
