@@ -192,7 +192,7 @@ fn convert_to_sel_displaying_errs(
     })
 }
 
-fn print_completions<G: clap_complete::Generator>(g: G) {
+pub fn print_completions<G: clap_complete::Generator>(g: G) {
     let mut cmd = Args::command();
     let name = cmd.get_name().to_string();
     clap_complete::generate(g, &mut cmd, name, &mut std::io::stdout());
@@ -265,4 +265,209 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sand::parser::{ParseError, Span};
+    use codespan_reporting::diagnostic::Diagnostic;
+
+    // Note: Using standard Rust testing framework
+    // Unit tests for pure functions in main.rs
+
+    #[test]
+    fn test_convert_parse_error_multiple_name_define_basic() {
+        let span = Span { start: 5, end: 10 };
+        let error = ParseError::MultipleNameDefine(span);
+        let diagnostic = convert_parse_error(0, &error);
+        
+        assert_eq!(diagnostic.message, "names are defined more than once");
+        assert_eq!(diagnostic.labels.len(), 1);
+        assert_eq!(diagnostic.labels[0].range, 5..10);
+        assert_eq!(diagnostic.labels[0].file_id, 0);
+        assert_eq!(diagnostic.labels[0].message, "this is a repeated definition");
+    }
+
+    #[test]
+    fn test_convert_parse_error_duplicate_names_basic() {
+        let span = Span { start: 0, end: 5 };
+        let error = ParseError::DuplicateNames("test".to_string(), span);
+        let diagnostic = convert_parse_error(1, &error);
+        
+        assert_eq!(diagnostic.message, "duplicate name: `test`");
+        assert_eq!(diagnostic.labels.len(), 1);
+        assert_eq!(diagnostic.labels[0].range, 0..5);
+        assert_eq!(diagnostic.labels[0].file_id, 1);
+        assert_eq!(diagnostic.labels[0].message, "duplicate name here");
+    }
+
+    #[test]
+    fn test_convert_parse_error_duplicate_alias_basic() {
+        let span = Span { start: 10, end: 20 };
+        let error = ParseError::DuplicateAlias("alias".to_string(), span);
+        let diagnostic = convert_parse_error(2, &error);
+        
+        assert_eq!(diagnostic.message, "duplicate alias: `alias`");
+        assert_eq!(diagnostic.labels.len(), 1);
+        assert_eq!(diagnostic.labels[0].range, 10..20);
+        assert_eq!(diagnostic.labels[0].file_id, 2);
+        assert_eq!(diagnostic.labels[0].message, "duplicate alias here");
+    }
+
+    #[test]
+    fn test_convert_parse_error_alias_conflict_basic() {
+        let span = Span { start: 15, end: 25 };
+        let error = ParseError::AliasConflictWithNames("conflict".to_string(), span);
+        let diagnostic = convert_parse_error(3, &error);
+        
+        assert_eq!(diagnostic.message, "alias `conflict` conflicts with a name");
+        assert_eq!(diagnostic.labels.len(), 1);
+        assert_eq!(diagnostic.labels[0].range, 15..25);
+        assert_eq!(diagnostic.labels[0].file_id, 3);
+        assert_eq!(diagnostic.labels[0].message, "this alias conflicts with a name");
+    }
+
+    #[test]
+    fn test_convert_parse_error_selector_basic() {
+        let span = Span { start: 30, end: 40 };
+        let error = ParseError::Selector("bad.selector".to_string(), span);
+        let diagnostic = convert_parse_error(4, &error);
+        
+        assert_eq!(diagnostic.message, "selector syntax is incorrect: bad.selector");
+        assert_eq!(diagnostic.labels.len(), 1);
+        assert_eq!(diagnostic.labels[0].range, 30..40);
+        assert_eq!(diagnostic.labels[0].file_id, 4);
+        assert_eq!(diagnostic.labels[0].message, "selector syntax is incorrect");
+    }
+
+    #[test]
+    fn test_convert_parse_error_missing_names_basic() {
+        let error = ParseError::MissingNames;
+        let diagnostic = convert_parse_error(5, &error);
+        
+        assert_eq!(diagnostic.message, "names are not defined");
+        assert_eq!(diagnostic.labels.len(), 0);
+    }
+
+    #[test]
+    fn test_convert_parse_error_with_empty_strings() {
+        let span = Span { start: 0, end: 1 };
+        
+        let error1 = ParseError::DuplicateNames("".to_string(), span);
+        let diagnostic1 = convert_parse_error(0, &error1);
+        assert_eq!(diagnostic1.message, "duplicate name: ``");
+        
+        let error2 = ParseError::DuplicateAlias("".to_string(), span);
+        let diagnostic2 = convert_parse_error(0, &error2);
+        assert_eq!(diagnostic2.message, "duplicate alias: ``");
+        
+        let error3 = ParseError::Selector("".to_string(), span);
+        let diagnostic3 = convert_parse_error(0, &error3);
+        assert_eq!(diagnostic3.message, "selector syntax is incorrect: ");
+        
+        let error4 = ParseError::AliasConflictWithNames("".to_string(), span);
+        let diagnostic4 = convert_parse_error(0, &error4);
+        assert_eq!(diagnostic4.message, "alias `` conflicts with a name");
+    }
+
+    #[test]
+    fn test_convert_parse_error_with_unicode_strings() {
+        let span = Span { start: 0, end: 10 };
+        
+        let error1 = ParseError::DuplicateNames("тест".to_string(), span);
+        let diagnostic1 = convert_parse_error(0, &error1);
+        assert_eq!(diagnostic1.message, "duplicate name: `тест`");
+        
+        let error2 = ParseError::DuplicateAlias("別名".to_string(), span);
+        let diagnostic2 = convert_parse_error(0, &error2);
+        assert_eq!(diagnostic2.message, "duplicate alias: `別名`");
+        
+        let error3 = ParseError::Selector("선택자.경로".to_string(), span);
+        let diagnostic3 = convert_parse_error(0, &error3);
+        assert_eq!(diagnostic3.message, "selector syntax is incorrect: 선택자.경로");
+    }
+
+    #[test]
+    fn test_convert_parse_error_with_special_characters() {
+        let span = Span { start: 0, end: 5 };
+        
+        let error1 = ParseError::DuplicateNames("test-name_123".to_string(), span);
+        let diagnostic1 = convert_parse_error(0, &error1);
+        assert_eq!(diagnostic1.message, "duplicate name: `test-name_123`");
+        
+        let error2 = ParseError::Selector("path.to[0].item".to_string(), span);
+        let diagnostic2 = convert_parse_error(0, &error2);
+        assert_eq!(diagnostic2.message, "selector syntax is incorrect: path.to[0].item");
+    }
+
+    #[test]
+    fn test_convert_parse_error_span_edge_cases() {
+        // Test zero-width span
+        let span1 = Span { start: 10, end: 10 };
+        let error1 = ParseError::MultipleNameDefine(span1);
+        let diagnostic1 = convert_parse_error(0, &error1);
+        assert_eq!(diagnostic1.labels[0].range, 10..10);
+        
+        // Test large span
+        let span2 = Span { start: 1000, end: 2000 };
+        let error2 = ParseError::MultipleNameDefine(span2);
+        let diagnostic2 = convert_parse_error(0, &error2);
+        assert_eq!(diagnostic2.labels[0].range, 1000..2000);
+        
+        // Test single character span
+        let span3 = Span { start: 5, end: 6 };
+        let error3 = ParseError::MultipleNameDefine(span3);
+        let diagnostic3 = convert_parse_error(0, &error3);
+        assert_eq!(diagnostic3.labels[0].range, 5..6);
+    }
+
+    #[test]
+    fn test_convert_parse_error_different_file_ids() {
+        let span = Span { start: 0, end: 5 };
+        let error = ParseError::MultipleNameDefine(span);
+        
+        let diagnostic1 = convert_parse_error(0, &error);
+        let diagnostic2 = convert_parse_error(100, &error);
+        let diagnostic3 = convert_parse_error(usize::MAX, &error);
+        
+        assert_eq!(diagnostic1.labels[0].file_id, 0);
+        assert_eq!(diagnostic2.labels[0].file_id, 100);
+        assert_eq!(diagnostic3.labels[0].file_id, usize::MAX);
+        
+        // All should have the same message and range
+        assert_eq!(diagnostic1.message, diagnostic2.message);
+        assert_eq!(diagnostic1.message, diagnostic3.message);
+        assert_eq!(diagnostic1.labels[0].range, diagnostic2.labels[0].range);
+        assert_eq!(diagnostic1.labels[0].range, diagnostic3.labels[0].range);
+    }
+
+    #[test]
+    fn test_convert_parse_error_long_strings() {
+        let span = Span { start: 0, end: 10 };
+        let long_name = "a".repeat(1000);
+        
+        let error = ParseError::DuplicateNames(long_name.clone(), span);
+        let diagnostic = convert_parse_error(0, &error);
+        
+        assert_eq!(diagnostic.message, format!("duplicate name: `{}`", long_name));
+        assert_eq!(diagnostic.labels[0].range, 0..10);
+    }
+
+    #[test]
+    fn test_convert_parse_error_newlines_and_special_chars() {
+        let span = Span { start: 0, end: 5 };
+        
+        let error1 = ParseError::DuplicateNames("name\nwith\nnewlines".to_string(), span);
+        let diagnostic1 = convert_parse_error(0, &error1);
+        assert_eq!(diagnostic1.message, "duplicate name: `name\nwith\nnewlines`");
+        
+        let error2 = ParseError::Selector("sel\tec\tor".to_string(), span);
+        let diagnostic2 = convert_parse_error(0, &error2);
+        assert_eq!(diagnostic2.message, "selector syntax is incorrect: sel\tec\tor");
+    }
+
+    // Note: Testing convert_pest_error and other functions that depend on external
+    // pest types would require more complex setup and are better tested in integration tests
+    // where we can create actual pest errors rather than mock them.
 }
