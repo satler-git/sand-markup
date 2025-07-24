@@ -5,10 +5,10 @@ use sand::parser::{Document, ParseError, Span};
 use std::path::{Path, PathBuf};
 use tokio::{fs::File, io::AsyncReadExt};
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     #[command(subcommand)]
     command: Command,
@@ -16,12 +16,29 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Parse and validate it
+    /// Parse and validate the given input file.
+    ///
+    /// Reads the specified file, parses its contents according to the
+    /// grammar rules, and reports any errors or warnings found.
     Parse {
+        /// Path to the input file to be parsed.
+        ///
+        /// Must point to a readable file containing the source to validate.
         #[arg(value_name = "FILE", value_parser)]
         input: PathBuf,
     },
+
+    /// Launch the Language Server Protocol (LSP) server.
+    ///
+    /// Starts the LSP server, allowing IDEs and editors to connect
+    /// for on‑the‑fly diagnostics, completions(to do), and other language features.
     Lsp,
+
+    /// Generate shell completion scripts.
+    ///
+    /// Outputs a shell-specific completion script to stdout.
+    /// Supported shells include Bash, Zsh, Fish, PowerShell, and Elvish.
+    Completions { shell: clap_complete::Shell },
 }
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -137,6 +154,12 @@ fn convert_to_doc_displaying_errs(input: &str, path: &Path) -> Document {
     }
 }
 
+fn print_completions<G: clap_complete::Generator>(g: G) {
+    let mut cmd = Args::command();
+    let name = cmd.get_name().to_string();
+    clap_complete::generate(g, &mut cmd, name, &mut std::io::stdout());
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -160,6 +183,9 @@ async fn main() -> Result<()> {
 
             let (service, socket) = LspService::new(SandServer::new);
             Server::new(stdin, stdout, socket).serve(service).await;
+        }
+        Command::Completions { shell } => {
+            print_completions(shell);
         }
     }
 
