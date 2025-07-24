@@ -198,15 +198,7 @@ fn print_completions<G: clap_complete::Generator>(g: G) {
     clap_complete::generate(g, &mut cmd, name, &mut std::io::stdout());
 }
 
-/// Entry point for the CLI tool, dispatching subcommands for parsing, LSP server, shell completions, and filtered document output.
-///
-/// Parses command-line arguments and executes the selected subcommand:
-/// - `Parse`: Reads and parses an input file, printing its debug representation.
-/// - `Lsp`: Launches a Language Server Protocol server for document editing support.
-/// - `Completions`: Generates and prints shell completion scripts for supported shells.
-/// - `Out`: Reads an input file, parses it, applies a selector, and renders filtered output as plain text or Markdown, formatting sections with headers if multiple outputs are produced.
-///
-/// Exits the process with an error message if parsing or file operations fail.
+#[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
