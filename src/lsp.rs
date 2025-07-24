@@ -344,7 +344,7 @@ impl LanguageServer for SandServer {
             &params.text_document_position_params.position,
             &doc.ast,
         )
-        .map(|ast| match &ast.node {
+        .and_then(|ast| match &ast.node {
             NodeKind::Sen(_) => Some(Hover {
                 contents: HoverContents::Markup(MarkupContent {
                     kind: MarkupKind::Markdown,
@@ -403,7 +403,6 @@ impl LanguageServer for SandServer {
                 })
             }
             _ => None,
-        })
-        .flatten())
+        }))
     }
 }
