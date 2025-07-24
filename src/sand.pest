@@ -17,7 +17,7 @@ non_escaped_char   =  {
   | !("#" | "\\") ~ ANY
 }
 
-Ident      = @{ ASCII_ALPHANUMERIC+ }
+Ident      = @{ (ASCII_ALPHANUMERIC | "_")+ }
 Ident_list =  { Ident ~ ("," ~ Ident)* }
 
 PartName = { "#(" ~ Ident_list ~ ")" }

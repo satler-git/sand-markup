@@ -566,6 +566,7 @@ impl AST {
         }
     }
 
+    // TODO: bug
     pub fn find_parent_at_position(&self, position: usize) -> Option<&AST> {
         if let Some((_, children)) = self.take_section_like() {
             for child in children {
