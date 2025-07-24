@@ -18,7 +18,14 @@ source <(sand completions zsh) # Zsh向けの補完
 
 ## LSPサーバー
 
+Neovimの例
+
 ```lua
+vim.filetype.add({
+  extension = {
+    sand = "sand",
+  },
+})
 vim.lsp.config("sandls",
   {
     cmd = { "sand", "lsp" },
