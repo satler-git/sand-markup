@@ -7,13 +7,13 @@ WHITESPACE = _{ " " | "\t" }
 string  = @{ char+ }
 escaped = _{ ("]" | "\\" | "}") }
 char    =  {
-    "\\" ~ (escaped | "/" | "n" | "r" | "t")
+    "\\" ~ (escaped | "/" | "n")
   | !(escaped) ~ ANY
 }
 
 non_escaped_string = @{ non_escaped_char+ }
 non_escaped_char   =  {
-    "\\" ~ ("#" | "\\" | "/" | "n" | "r" | "t")
+    "\\" ~ ("#" | "\\" | "/" | "n")
   | !("#" | "\\") ~ ANY
 }
 

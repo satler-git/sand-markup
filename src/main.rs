@@ -1,8 +1,8 @@
 use anyhow::Result;
 
-use sand::parser::{Document, ParseError, Span};
+use sand::parser::{Document, ParseError, Rule, Span};
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::{fs::File, io::AsyncReadExt};
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -39,6 +39,20 @@ enum Command {
     /// Outputs a shell-specific completion script to stdout.
     /// Supported shells include Bash, Zsh, Fish, PowerShell, and Elvish.
     Completions { shell: clap_complete::Shell },
+
+    /// Render filtered document output based on a selector.
+    ///
+    /// Extracts and displays specific content from the document based on
+    /// the provided selector syntax.
+    Out {
+        /// Selector string to filter document content.
+        ///
+        /// Uses dot-notation to navigate the document structure.
+        selector: String,
+        /// Path to the input file to process.
+        #[arg(long, short, value_name = "FILE", value_parser)]
+        input: PathBuf,
+    },
 }
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -114,44 +128,64 @@ pub fn convert_pest_error(
     }
 }
 
-fn convert_to_doc_displaying_errs(input: &str, path: &Path) -> Document {
-    use codespan_reporting::{
-        files::SimpleFiles,
-        term::{Config, emit, termcolor},
-    };
-    use pest::Parser as _;
-    use sand::parser::{Rule, SandParser};
+use codespan_reporting::files::SimpleFiles;
 
-    let pairs = SandParser::parse(Rule::doc, input);
-
-    let mut files = SimpleFiles::new();
-
-    let filename = path.display().to_string();
-    let file_id = files.add(filename, input.to_string());
+fn report(files: &SimpleFiles<String, String>, diag: Diagnostic<usize>) {
+    use codespan_reporting::term::{Config, emit, termcolor};
 
     let writer = termcolor::StandardStream::stderr(termcolor::ColorChoice::Auto);
     let config = Config::default();
+    emit(&mut writer.lock(), &config, files, &diag)
+        .unwrap_or_else(|e| eprintln!("failed to emit diagnostics: {e}"));
+}
 
-    match pairs {
-        Err(parsing_error) => {
-            let diag = convert_pest_error(file_id, parsing_error);
-            emit(&mut writer.lock(), &config, &files, &diag).unwrap();
+fn parse_with_reporting<'a, T, F>(rule: Rule, input: &'a str, filename: &str, f: F) -> T
+where
+    F: FnOnce(
+        &mut SimpleFiles<String, String>,
+        usize,
+        pest::iterators::Pairs<'a, sand::parser::Rule>,
+    ) -> Result<T, Vec<ParseError>>,
+{
+    use pest::Parser as _;
+
+    let pairs = sand::parser::SandParser::parse(rule, input);
+    let mut files = SimpleFiles::new();
+    let file_id = files.add(filename.to_string(), input.to_string());
+
+    let pairs = match pairs {
+        Err(e) => {
+            let diag = convert_pest_error(file_id, e);
+            report(&files, diag);
             std::process::exit(1)
         }
-        Ok(pairs) => {
-            let doc: Result<Document, _> = pairs.try_into();
-            match doc {
-                Ok(doc) => doc,
-                Err(errs) => {
-                    for err in errs {
-                        let diag = convert_parse_error(file_id, &err);
-                        emit(&mut writer.lock(), &config, &files, &diag).unwrap();
-                    }
-                    std::process::exit(1)
-                }
+        Ok(p) => p,
+    };
+
+    match f(&mut files, file_id, pairs) {
+        Ok(val) => val,
+        Err(errs) => {
+            for err in errs {
+                let diag = convert_parse_error(file_id, &err);
+                report(&files, diag);
             }
+            std::process::exit(1)
         }
     }
+}
+
+fn convert_to_doc_displaying_errs(input: &str, filename: &str) -> Document {
+    parse_with_reporting(Rule::doc, input, filename, |_, _, pairs| pairs.try_into())
+}
+
+fn convert_to_sel_displaying_errs(
+    input: &str,
+    doc: &Document,
+    filename: &str,
+) -> sand::formatter::Selector {
+    parse_with_reporting(Rule::Selector, input, filename, |_, _, pairs| {
+        (doc, pairs).try_into()
+    })
 }
 
 fn print_completions<G: clap_complete::Generator>(g: G) {
@@ -171,7 +205,8 @@ async fn main() -> Result<()> {
             let mut contents = String::new();
             file.read_to_string(&mut contents).await?;
 
-            let doc = convert_to_doc_displaying_errs(&contents, &input);
+            let filename = input.display().to_string();
+            let doc = convert_to_doc_displaying_errs(&contents, &filename);
             println!("{doc:?}");
         }
         Command::Lsp => {
@@ -186,6 +221,38 @@ async fn main() -> Result<()> {
         }
         Command::Completions { shell } => {
             print_completions(shell);
+        }
+        Command::Out { selector, input } => {
+            let mut file = File::open(&input).await?;
+
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).await?;
+
+            let filename = input.display().to_string();
+            let doc = convert_to_doc_displaying_errs(&contents, &filename);
+            let sel = convert_to_sel_displaying_errs(&selector, &doc, "<user>");
+
+            let rendered = sand::formatter::render_plain(&doc, &sel);
+            if rendered.len() == 1 {
+                println!("{}", rendered[0]);
+            } else {
+                let width = terminal_size::terminal_size()
+                    .map(|(w, _h)| match w {
+                        terminal_size::Width(w) => w as usize,
+                    })
+                    .unwrap_or(80);
+
+                for (content, name) in rendered.into_iter().zip(doc.names.iter()) {
+                    use colored::Colorize;
+
+                    let bar = "─".repeat(width.saturating_sub(name.len() + 1));
+
+                    println!("{} {bar}", name.bold().underline().red());
+                    println!();
+                    println!("{content}");
+                    println!();
+                }
+            }
         }
     }
 

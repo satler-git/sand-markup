@@ -52,6 +52,74 @@ pub enum SelectorError {
     OutOfIndex,
     #[error("neither a number nor an alias: {0}")]
     Neither(String),
+    #[error("expected to be global selector , but found a local selector")]
+    Local,
+}
+
+pub fn validate_non_local_selector(doc: &Document, sel: &AST) -> Vec<ParseError> {
+    let mut v = vec![];
+    if let NodeKind::Selector {
+        local,
+        path,
+        trailing_dot,
+    } = &sel.node
+    {
+        if *local {
+            v.push(ParseError::Selector(
+                SelectorError::Local,
+                sel.get_span().unwrap(),
+            ));
+            return v;
+        }
+
+        let range = if !trailing_dot && !path.is_empty() {
+            if !doc.names.contains(path.last().unwrap()) {
+                v.push(ParseError::Selector(
+                    SelectorError::LastIsNotDotOrName,
+                    sel.get_span().unwrap(),
+                ));
+            }
+            0..(path.len() - 1)
+        } else {
+            0..(path.len())
+        };
+
+        let mut curr = &doc.ast;
+
+        for k in &path[range] {
+            if matches!(curr.node, NodeKind::Sen { .. })
+                || matches!(curr.node, NodeKind::All { .. })
+            {
+                break;
+            }
+            let (alias, children) = curr.take_section_like().unwrap();
+            let children_without_sel: Vec<&AST> = children
+                .iter()
+                .filter(|p| !matches!(&p.node, NodeKind::Selector { .. }))
+                .collect();
+
+            if let Some(index) = alias.get(k) {
+                curr = children_without_sel[*index];
+            } else if let Ok(index) = k.parse::<usize>() {
+                if index >= children_without_sel.len() {
+                    v.push(ParseError::Selector(
+                        SelectorError::OutOfIndex,
+                        sel.get_span().unwrap(),
+                    ));
+                    break;
+                } else {
+                    curr = children_without_sel[index];
+                }
+            } else {
+                v.push(ParseError::Selector(
+                    SelectorError::Neither(k.clone()),
+                    sel.get_span().unwrap(),
+                ));
+                break;
+            }
+        }
+    }
+    v
 }
 
 // TODO: validateでエラーをまとめて出す
@@ -204,42 +272,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     });
                 }
                 Rule::Selector => {
-                    // TODO: ここを関数に切り出してformatterでも再利用
-                    let mut inner = pair.into_inner();
-
-                    let local = match inner.peek() {
-                        Some(p) if p.as_rule() == Rule::Slash => {
-                            inner.next();
-                            true
-                        }
-                        _ => false,
-                    };
-
-                    let mut path = vec![];
-                    let mut trailing_dot = false;
-                    for p in inner {
-                        match p.as_rule() {
-                            Rule::Ident => {
-                                path.push(p.as_str().to_string());
-                            }
-                            Rule::LastDot => {
-                                trailing_dot = true;
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    to_push_at_last = Some(AST {
-                        meta: NodeMeta {
-                            span: Some(span),
-                            alias: None,
-                        },
-                        node: NodeKind::Selector {
-                            local,
-                            path,
-                            trailing_dot,
-                        },
-                    });
+                    to_push_at_last = Some(parse_selector(span, pair));
                 }
                 _ => (),
             }
@@ -372,7 +405,6 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 }
                 v
             }
-
             errs.extend(check_selector(names, &ast[0], &ast[0]));
         }
 
@@ -392,6 +424,43 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             names,
             ast: ast.into_iter().next().unwrap(),
         })
+    }
+}
+
+pub fn parse_selector(span: Span, pair: pest::iterators::Pair<'_, Rule>) -> AST {
+    let mut inner = pair.into_inner();
+
+    let local = match inner.peek() {
+        Some(p) if p.as_rule() == Rule::Slash => {
+            inner.next();
+            true
+        }
+        _ => false,
+    };
+
+    let mut path = vec![];
+    let mut trailing_dot = false;
+    for p in inner {
+        match p.as_rule() {
+            Rule::Ident => {
+                path.push(p.as_str().to_string());
+            }
+            Rule::LastDot => {
+                trailing_dot = true;
+            }
+            _ => {}
+        }
+    }
+    AST {
+        meta: NodeMeta {
+            span: Some(span),
+            alias: None,
+        },
+        node: NodeKind::Selector {
+            local,
+            path,
+            trailing_dot,
+        },
     }
 }
 
@@ -482,7 +551,7 @@ impl AST {
         }
     }
 
-    fn take_section_like(&self) -> Option<(&Alias, &Vec<AST>)> {
+    pub(crate) fn take_section_like(&self) -> Option<(&Alias, &Vec<AST>)> {
         match &self.node {
             NodeKind::Top {
                 aliases: a,
