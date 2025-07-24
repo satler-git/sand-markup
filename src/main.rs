@@ -40,8 +40,16 @@ enum Command {
     /// Supported shells include Bash, Zsh, Fish, PowerShell, and Elvish.
     Completions { shell: clap_complete::Shell },
 
+    /// Render filtered document output based on a selector.
+    ///
+    /// Extracts and displays specific content from the document based on
+    /// the provided selector syntax.
     Out {
+        /// Selector string to filter document content.
+        ///
+        /// Uses dot-notation to navigate the document structure.
         selector: String,
+        /// Path to the input file to process.
         #[arg(long, short, value_name = "FILE", value_parser)]
         input: PathBuf,
     },
