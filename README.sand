@@ -12,7 +12,7 @@ Sandは複数の言語で表わされる文章の添削や推敲を行なうた�
 #s1[
     I'm happy.
 ][
-    嬉しいよ！
+    私は幸せです。
 ]
 
 sand out \#.en --input README.md
@@ -62,10 +62,10 @@ sand out \#.en --markdown --input README.md
 #s1[
     Hey from Sand.
 ][
-    Sandからこんにちは
+    Sandからこんにちは。
 ]
 
-文には #.intro.0.0.en または #.sentence.s2.ja #./s1. のようにアクセスでき、LSPサーバー経由で詳細を確認できます。
+文には #.intro.0.0.en または #.sentence.s2.ja #./s1. のようにアクセスでき、LSPサーバー経由(hover)で詳細を確認できます。
 
 - `/`をつけることで今いるセクションから開始する
 - 最後に最初に定義した名前をつけない場合全てを指定したということになる
