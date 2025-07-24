@@ -570,16 +570,17 @@ impl AST {
     pub fn find_parent_at_position(&self, position: usize) -> Option<&AST> {
         if let Some((_, children)) = self.take_section_like() {
             for child in children {
-                if let Some(parent) = child.find_parent_at_position(position) {
-                    return Some(parent);
+                if child.meta.span.start <= position && position <= child.meta.span.end {
+                    return Some(self);
+                }
+            }
+            for child in children {
+                if let Some(deeper_parent) = child.find_parent_at_position(position) {
+                    return Some(deeper_parent);
                 }
             }
         }
-        if self.meta.span.start <= position && position <= self.meta.span.end {
-            Some(self)
-        } else {
-            None
-        }
+        None
     }
 }
 
