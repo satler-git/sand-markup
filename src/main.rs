@@ -52,6 +52,10 @@ enum Command {
         /// Path to the input file to process.
         #[arg(long, short, value_name = "FILE", value_parser)]
         input: PathBuf,
+
+        /// Output as Markdown Text
+        #[arg(long, short)]
+        markdown: bool,
     },
 }
 
@@ -222,7 +226,11 @@ async fn main() -> Result<()> {
         Command::Completions { shell } => {
             print_completions(shell);
         }
-        Command::Out { selector, input } => {
+        Command::Out {
+            selector,
+            markdown,
+            input,
+        } => {
             let mut file = File::open(&input).await?;
 
             let mut contents = String::new();
@@ -232,7 +240,7 @@ async fn main() -> Result<()> {
             let doc = convert_to_doc_displaying_errs(&contents, &filename);
             let sel = convert_to_sel_displaying_errs(&selector, &doc, "<user>");
 
-            let rendered = sand::formatter::render_plain(&doc, &sel);
+            let rendered = sand::formatter::render_plain(&doc, &sel, markdown);
             if rendered.len() == 1 {
                 println!("{}", rendered[0]);
             } else {

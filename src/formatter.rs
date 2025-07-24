@@ -24,11 +24,22 @@ impl TryFrom<(&Document, Pairs<'_, Rule>)> for Selector {
 }
 
 // localでもDocumentの中のASTだけ差し替えるだけでいいはず
-pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
+/// Renders the selected part(s) of a document as plain text or Markdown-formatted strings.
+///
+/// If the selector targets a specific named section, returns a single rendered string for that section.
+/// Otherwise, returns a vector of rendered strings for all named sections in the document.
+/// When `markdown` is true, section headers are formatted as Markdown headers.
+///
+/// # Parameters
+/// - `markdown`: If true, formats output with Markdown-style section headers.
+///
+/// # Returns
+/// A vector of rendered strings, each representing a section of the document.
+pub fn render_plain(doc: &Document, sel: &Selector, markdown: bool) -> Vec<String> {
     let (target_ast, target_name) = select(doc, sel);
     if let Some(target_name) = target_name {
         vec![
-            to_plain(target_ast, (target_name, &doc.names[target_name]))
+            to_plain(target_ast, (target_name, &doc.names[target_name]), markdown)
                 .lines()
                 .map(trim)
                 .collect::<Vec<_>>()
@@ -39,7 +50,7 @@ pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
             .iter()
             .enumerate()
             .map(|(index, name)| {
-                to_plain(target_ast, (index, name))
+                to_plain(target_ast, (index, name), markdown)
                     .lines()
                     .map(trim)
                     .collect::<Vec<_>>()
@@ -49,6 +60,13 @@ pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
     }
 }
 
+/// Traverses the document AST according to the selector path and returns the targeted AST node and, if applicable, the index of the last path element in the document's names.
+///
+/// If the selector has a trailing dot or an empty path, returns the root AST and no target name index. Otherwise, follows the selector path through section-like nodes, matching by alias or numeric index, and returns the final AST node and the index of the last path element if found.
+///
+/// # Panics
+///
+/// Panics if the selector path is invalid, which should not occur if the selector has been validated beforehand.
 fn select<'a>(doc: &'a Document, sel: &'a Selector) -> (&'a AST, Option<usize>) {
     if let Selector(AST {
         node: crate::parser::NodeKind::Selector {
@@ -92,7 +110,11 @@ fn select<'a>(doc: &'a Document, sel: &'a Selector) -> (&'a AST, Option<usize>) 
     }
 }
 
-fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
+/// Converts an AST node and its descendants to a plain text or Markdown-formatted string for a given name index and name.
+///
+/// If `markdown` is true, section nodes are rendered as Markdown headers with appropriate heading levels.
+/// Otherwise, content is concatenated as plain text. Only content matching the specified name is included for nodes with named content.
+fn to_plain(ast: &AST, (name_i, name): (usize, &str), markdown: bool) -> String {
     let mut s = String::new();
 
     match &ast.node {
@@ -110,14 +132,28 @@ fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
             }
         }
         crate::parser::NodeKind::Section {
-            // TODO: markdownではsection動作だけ変えればいい？
             children,
+            level,
+            content,
             ..
-        }
-        | crate::parser::NodeKind::Top { children, .. } => {
+        } => {
+            if markdown {
+                s += "\n\n";
+                s += &"#".repeat(*level);
+                s += " ";
+                s += content;
+                s += "\n\n";
+            }
+
             for ci in children {
                 s += " ";
-                s += &to_plain(ci, (name_i, name));
+                s += &to_plain(ci, (name_i, name), markdown);
+            }
+        }
+        crate::parser::NodeKind::Top { children, .. } => {
+            for ci in children {
+                s += " ";
+                s += &to_plain(ci, (name_i, name), markdown);
             }
         }
         _ => {}
@@ -148,12 +184,12 @@ mod tests {
         assert_eq!(
             trim(
                 r#"
-I'm very happy!!
+I'm thrilled!!
     It's because??
     I like you!
         "#
             ),
-            "I'm very happy!! It's because?? I like you!".to_string()
+            "I'm thrilled!! It's because?? I like you!".to_string()
         );
 
         Ok(())
