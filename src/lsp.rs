@@ -143,7 +143,7 @@ impl LanguageServer for SandServer {
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "SandServer".to_string(),
-                version: Some("0.1.0".to_string()),
+                version: Some(env!("CARGO_PKG_VERSION").to_string()),
             }),
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
