@@ -57,6 +57,7 @@ pub enum SelectorError {
 }
 
 pub fn validate_non_local_selector(doc: &Document, sel: &AST) -> Vec<ParseError> {
+    // TODO: DRY
     let mut v = vec![];
     if let NodeKind::Selector {
         local,
@@ -65,10 +66,7 @@ pub fn validate_non_local_selector(doc: &Document, sel: &AST) -> Vec<ParseError>
     } = &sel.node
     {
         if *local {
-            v.push(ParseError::Selector(
-                SelectorError::Local,
-                sel.get_span().unwrap(),
-            ));
+            v.push(ParseError::Selector(SelectorError::Local, sel.get_span()));
             return v;
         }
 
@@ -76,7 +74,7 @@ pub fn validate_non_local_selector(doc: &Document, sel: &AST) -> Vec<ParseError>
             if !doc.names.contains(path.last().unwrap()) {
                 v.push(ParseError::Selector(
                     SelectorError::LastIsNotDotOrName,
-                    sel.get_span().unwrap(),
+                    sel.get_span(),
                 ));
             }
             0..(path.len() - 1)
@@ -93,18 +91,19 @@ pub fn validate_non_local_selector(doc: &Document, sel: &AST) -> Vec<ParseError>
                 break;
             }
             let (alias, children) = curr.take_section_like().unwrap();
-            let children_without_sel: Vec<&AST> = children
-                .iter()
-                .filter(|p| !matches!(&p.node, NodeKind::Selector { .. }))
-                .collect();
 
             if let Some(index) = alias.get(k) {
-                curr = children_without_sel[*index];
+                curr = &children[*index];
             } else if let Ok(index) = k.parse::<usize>() {
+                let children_without_sel: Vec<&AST> = children
+                    .iter()
+                    .filter(|p| !matches!(&p.node, NodeKind::Selector { .. }))
+                    .collect();
+
                 if index >= children_without_sel.len() {
                     v.push(ParseError::Selector(
                         SelectorError::OutOfIndex,
-                        sel.get_span().unwrap(),
+                        sel.get_span(),
                     ));
                     break;
                 } else {
@@ -113,7 +112,7 @@ pub fn validate_non_local_selector(doc: &Document, sel: &AST) -> Vec<ParseError>
             } else {
                 v.push(ParseError::Selector(
                     SelectorError::Neither(k.clone()),
-                    sel.get_span().unwrap(),
+                    sel.get_span(),
                 ));
                 break;
             }
@@ -134,14 +133,14 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             },
             meta: NodeMeta {
                 alias: None,
-                span: None,
+                span: Span { start: 0, end: 0 },
             },
         }];
         let mut names: Option<(Span, Vec<String>)> = None;
 
-        let mut errs = FxHashSet::default();
-
         let root = pairs.next().unwrap();
+
+        let mut errs = FxHashSet::default();
 
         for pair in root.into_inner() {
             let span: Span = pair.as_span().into();
@@ -197,7 +196,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                                     a,
                                     v,
                                     v.len(),
-                                    top.get_span().unwrap(),
+                                    top.get_span(),
                                     &mut errs,
                                 );
                             }
@@ -207,10 +206,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     }
 
                     ast.push(AST {
-                        meta: NodeMeta {
-                            span: Some(span),
-                            alias,
-                        },
+                        meta: NodeMeta { span, alias },
                         node: NodeKind::Section {
                             level,
                             content,
@@ -248,7 +244,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                             content: elements.1,
                         },
                         meta: NodeMeta {
-                            span: Some(span.clone()),
+                            span: span.clone(),
                             alias: alias.clone(),
                         },
                     });
@@ -265,7 +261,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
 
                     to_push_at_last = Some(AST {
                         meta: NodeMeta {
-                            span: Some(span.clone()),
+                            span: span.clone(),
                             alias: alias.clone(),
                         },
                         node: NodeKind::Sen(sentences),
@@ -282,14 +278,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     let (_, a, v) = last.take_mut_section_like().unwrap();
 
                     if let Some(ref alias) = to_add.meta.alias {
-                        check_alias_conflict(
-                            alias,
-                            a,
-                            v,
-                            v.len(),
-                            to_add.get_span().unwrap(),
-                            &mut errs,
-                        );
+                        check_alias_conflict(alias, a, v, v.len(), to_add.get_span(), &mut errs);
                     }
 
                     v.push(to_add);
@@ -304,14 +293,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 let (_, a, v) = last.take_mut_section_like().unwrap();
 
                 if let Some(ref alias) = to_add.meta.alias {
-                    check_alias_conflict(
-                        alias,
-                        a,
-                        v,
-                        v.len(),
-                        to_add.get_span().unwrap(),
-                        &mut errs,
-                    );
+                    check_alias_conflict(alias, a, v, v.len(), to_add.get_span(), &mut errs);
                 }
 
                 v.push(to_add);
@@ -324,7 +306,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 let mut v = vec![];
                 for n in names {
                     if let Some(index) = alias.get(n) {
-                        v.push((children[*index].get_span().unwrap(), n.clone()));
+                        v.push((children[*index].get_span(), n.clone()));
                     }
                 }
                 for p in children {
@@ -355,7 +337,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                             if !names.contains(path.last().unwrap()) {
                                 v.push(ParseError::Selector(
                                     SelectorError::LastIsNotDotOrName,
-                                    p.get_span().unwrap(),
+                                    p.get_span(),
                                 ));
                             }
                             0..(path.len() - 1)
@@ -372,18 +354,19 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                                 break;
                             }
                             let (alias, children) = curr.take_section_like().unwrap();
-                            let children_without_sel: Vec<&AST> = children
-                                .iter()
-                                .filter(|p| !matches!(&p.node, NodeKind::Selector { .. }))
-                                .collect();
 
                             if let Some(index) = alias.get(k) {
-                                curr = children_without_sel[*index];
+                                curr = &children[*index];
                             } else if let Ok(index) = k.parse::<usize>() {
+                                let children_without_sel: Vec<&AST> = children
+                                    .iter()
+                                    .filter(|p| !matches!(&p.node, NodeKind::Selector { .. }))
+                                    .collect();
+
                                 if index >= children_without_sel.len() {
                                     v.push(ParseError::Selector(
                                         SelectorError::OutOfIndex,
-                                        p.get_span().unwrap(),
+                                        p.get_span(),
                                     ));
                                     break;
                                 } else {
@@ -392,7 +375,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                             } else {
                                 v.push(ParseError::Selector(
                                     SelectorError::Neither(k.clone()),
-                                    p.get_span().unwrap(),
+                                    p.get_span(),
                                 ));
                                 break;
                             }
@@ -452,10 +435,7 @@ pub fn parse_selector(span: Span, pair: pest::iterators::Pair<'_, Rule>) -> AST 
         }
     }
     AST {
-        meta: NodeMeta {
-            span: Some(span),
-            alias: None,
-        },
+        meta: NodeMeta { span, alias: None },
         node: NodeKind::Selector {
             local,
             path,
@@ -466,13 +446,13 @@ pub fn parse_selector(span: Span, pair: pest::iterators::Pair<'_, Rule>) -> AST 
 
 type Alias = FxHashMap<String, usize>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NodeMeta {
-    span: Option<Span>,
+    span: Span,
     alias: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NodeKind {
     ///  Contents
     Sen(Vec<String>),
@@ -500,7 +480,7 @@ pub enum NodeKind {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AST {
     pub node: NodeKind,
     pub meta: NodeMeta,
@@ -529,7 +509,7 @@ fn check_alias_conflict(
         errs.insert(ParseError::DuplicateAlias(alias.to_string(), new_span));
         errs.insert(ParseError::DuplicateAlias(
             alias.to_string(),
-            children[conflict_index].get_span().unwrap(),
+            children[conflict_index].get_span(),
         ));
     }
 }
@@ -566,14 +546,44 @@ impl AST {
         }
     }
 
-    fn get_span(&self) -> Option<Span> {
+    fn get_span(&self) -> Span {
         self.meta.span.clone()
+    }
+
+    // TODO: bin searchにできるかも
+    pub fn find_node_at_position(&self, position: usize) -> Option<&AST> {
+        if let Some((_, children)) = self.take_section_like() {
+            for child in children {
+                if let Some(found) = child.find_node_at_position(position) {
+                    return Some(found);
+                }
+            }
+        }
+        if self.meta.span.start <= position && position <= self.meta.span.end {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    pub fn find_parent_at_position(&self, position: usize) -> Option<&AST> {
+        if let Some((_, children)) = self.take_section_like() {
+            for child in children {
+                if let Some(parent) = child.find_parent_at_position(position) {
+                    return Some(parent);
+                }
+            }
+        }
+        if self.meta.span.start <= position && position <= self.meta.span.end {
+            Some(self)
+        } else {
+            None
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     use crate::parser::{Document, ParseError, Rule, SandParser};
     use pest::Parser as _;
 
@@ -674,5 +684,105 @@ A section.
             result.is_ok(),
             "Expected apply-all, sentences, and selector to parse correctly"
         );
+    }
+
+    #[test]
+    fn find() {
+        use crate::parser::{AST, NodeKind, NodeMeta, Span};
+        use rustc_hash::FxHashMap;
+
+        let ast = AST {
+            node: NodeKind::Top {
+                aliases: FxHashMap::default(),
+                children: vec![
+                    AST {
+                        node: NodeKind::Sen(vec!["1".into()]),
+                        meta: NodeMeta {
+                            span: Span { start: 0, end: 10 },
+                            alias: None,
+                        },
+                    },
+                    AST {
+                        node: NodeKind::Sen(vec!["2".into()]),
+                        meta: NodeMeta {
+                            span: Span { start: 11, end: 20 },
+                            alias: None,
+                        },
+                    },
+                    AST {
+                        node: NodeKind::Sen(vec!["3".into()]),
+                        meta: NodeMeta {
+                            span: Span { start: 21, end: 30 },
+                            alias: None,
+                        },
+                    },
+                    AST {
+                        node: NodeKind::Section {
+                            aliases: FxHashMap::default(),
+                            content: "aaaaaaa".into(),
+                            level: 1,
+                            children: vec![AST {
+                                node: NodeKind::Section {
+                                    aliases: FxHashMap::default(),
+                                    content: "aaaaaaa".into(),
+                                    level: 2,
+                                    children: vec![AST {
+                                        node: NodeKind::Sen(vec![]),
+                                        meta: NodeMeta {
+                                            span: Span { start: 51, end: 51 },
+                                            alias: None,
+                                        },
+                                    }],
+                                },
+                                meta: NodeMeta {
+                                    span: Span { start: 41, end: 50 },
+                                    alias: None,
+                                },
+                            }],
+                        },
+                        meta: NodeMeta {
+                            span: Span { start: 31, end: 40 },
+                            alias: None,
+                        },
+                    },
+                ],
+            },
+            meta: NodeMeta {
+                span: Span { start: 0, end: 0 },
+                alias: None,
+            },
+        };
+
+        if let NodeKind::Sen(v) = &ast.find_node_at_position(15).unwrap().node {
+            assert_eq!(v[0], "2")
+        } else {
+            panic!()
+        }
+        if let NodeKind::Sen(v) = &ast.find_node_at_position(21).unwrap().node {
+            assert_eq!(v[0], "3")
+        } else {
+            panic!()
+        }
+        if let NodeKind::Sen(v) = &ast.find_node_at_position(2).unwrap().node {
+            assert_eq!(v[0], "1")
+        } else {
+            panic!()
+        }
+        assert!(matches!(
+            &ast.find_node_at_position(34).unwrap().node,
+            NodeKind::Section { level: 1, .. }
+        ));
+        assert!(matches!(
+            &ast.find_node_at_position(42).unwrap().node,
+            NodeKind::Section { level: 2, .. }
+        ));
+        assert!(matches!(
+            &ast.find_node_at_position(41).unwrap().node,
+            NodeKind::Section { level: 2, .. }
+        ));
+        assert!(matches!(
+            &ast.find_node_at_position(51).unwrap().node,
+            NodeKind::Sen(..)
+        ));
     }
 }
