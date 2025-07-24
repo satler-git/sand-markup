@@ -196,7 +196,7 @@ impl SandServer {
 }
 
 mod _doc {
-    pub(crate) const SECTION_DOC: &str = r#"
+    pub(super) const SECTION_DOC: &str = r#"
 The `Section` syntax provides a way to structure documents by creating meaningful divisions within your text. Currently, its primary purpose is to define logical sections, which can optionally include an alias.
 
 Here's a quick breakdown with examples:
@@ -215,17 +215,95 @@ In the examples above:
   * The content of the section must be on a single line with a line break at the end.
 "#;
 
-    pub(crate) const ALL_DOC: &str = r#"
-test
-    "#;
+    pub(super) const ALL_DOC: &str = r#"
+`ApplyAll` syntax, Apply a piece of content under all or a selected list of contexts (e.g. locales, formats).
 
-    pub(crate) const SENTENCE_DOC: &str = r#"
-sen
-    "#;
+* **Sugar form:**
 
-    pub(crate) const SELECTOR_DOC: &str = r#"
-sel
-    "#;
+```sand
+#{{ Use this everywhere }}
+
+#all{{ You can use with alias. }}
+```
+
+is equivalent to
+
+```sand
+#{all, { Use this everywhere }}
+#all{all, { You can use with alias. }}
+```
+* **Targeted form:**
+
+```sand
+#{[en],{ Hello only in English }}
+#{[mobile],{ Shown only on mobile }}
+```
+
+Here, the list inside `[...]` can be any identifiers you’ve defined (languages, output formats, etc.).
+"#;
+
+    pub(super) const SENTENCE_DOC: &str = r#"
+**Parallel Sentences**
+Use when you have one piece of content per declared name (e.g. multiple languages):
+
+```sand
+#(en, ja)    // Declare two targets: English and Japanese
+
+#alias[
+  Hello!
+][
+  こんにちは！
+]
+```
+
+* You must provide exactly one sentence block **per** declared name, in the same order.
+* The `Ident` (`alias`) is optional but useful for reference.
+"#;
+
+    pub(super) const SELECTOR_DOC: &str = r##"
+**Selector**
+Chooses one or more named contexts (e.g. languages, formats) relative to your current position.
+
+* **Global vs. Local**
+
+* `#.` or `#..` – selects all names from the document root.
+* `#./foo.en` – starts from the *current* section (due to `/`) and picks `foo` → `en`.
+* Without `/`, selection begins at the document root.
+
+* **Identifiers & Indexes**
+
+* You can use either an **alias** or a zero‑based **index** to refer to each level.
+* Example: these are equivalent:
+
+```sand
+#(en, ja)
+
+#sec1# level 1
+#sec2## level 2
+
+#test[
+    Hello!
+][
+    こんにちは
+]
+
+#./test.en            // local from current section
+#.0.0.0.en            // index-based from root (sec1=0, sec2=0, test=0)
+#./0.en               // index-based local
+```
+
+* **Trailing Dot (`.`)**
+
+* A selector ending in `.` (e.g. `#.sec1.sec2.`) expands to *all* declared names, as if you had written one selector per name:
+
+```sand
+#.sec1.sec2.   // same as #.sec1.sec2.en and #.sec1.sec2.ja
+```
+
+* **Minimal Forms**
+
+* `#.` or `#..` with nothing else simply means “select every name” in the appropriate scope (global or local).
+"##;
 }
 
 #[tower_lsp::async_trait]
