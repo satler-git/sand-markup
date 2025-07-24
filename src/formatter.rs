@@ -3,7 +3,7 @@ use pest::iterators::Pairs;
 use crate::parser::{AST, Document, ParseError, Rule};
 
 #[derive(Debug)]
-pub struct Selector(AST);
+pub struct Selector(pub AST);
 
 impl TryFrom<(&Document, Pairs<'_, Rule>)> for Selector {
     type Error = Vec<ParseError>;
@@ -68,18 +68,21 @@ fn select<'a>(doc: &'a Document, sel: &'a Selector) -> (&'a AST, Option<usize>) 
 
         let mut curr = &doc.ast;
         for pathi in path {
-            let (alias, children) = curr.take_section_like().unwrap();
-            let children_without_sel: Vec<&AST> = children
-                .iter()
-                .filter(|p| !matches!(&p.node, crate::parser::NodeKind::Selector { .. }))
-                .collect();
+            if let Some((alias, children)) = curr.take_section_like() {
+                if let Some(index) = alias.get(pathi) {
+                    curr = &children[*index];
+                } else if let Ok(index) = pathi.parse::<usize>() {
+                    let children_without_sel: Vec<&AST> = children
+                        .iter()
+                        .filter(|p| !matches!(&p.node, crate::parser::NodeKind::Selector { .. }))
+                        .collect();
 
-            if let Some(index) = alias.get(pathi) {
-                curr = children_without_sel[*index];
-            } else if let Ok(index) = pathi.parse::<usize>() {
-                curr = children_without_sel[index];
+                    curr = children_without_sel[index];
+                } else {
+                    panic!() // ここでselectorがvailedなのは保証されている
+                }
             } else {
-                panic!() // ここでselectorがvailedなのは保証されている
+                break;
             }
         }
 

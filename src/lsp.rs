@@ -1,4 +1,4 @@
-use crate::parser::Rule;
+use crate::parser::{AST, Document, NodeKind, Rule};
 use rustc_hash::FxHashMap;
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
@@ -16,22 +16,54 @@ pub struct SandServer {
 
 fn byte_offset_to_position(text: &str, offset: usize) -> Position {
     let mut line = 0;
-    let mut character = 0;
-    for (i, char_code) in text.char_indices() {
+    let mut utf16_char_offset = 0;
+    for (i, c) in text.char_indices() {
         if i == offset {
             break;
         }
-        if char_code == '\n' {
+        if c == '\n' {
             line += 1;
-            character = 0;
+            utf16_char_offset = 0;
         } else {
-            character += 1;
+            utf16_char_offset += c.len_utf16();
         }
     }
     Position {
         line: line as u32,
-        character: character as u32,
+        character: utf16_char_offset as u32,
     }
+}
+
+fn position_to_byte_offset(text: &str, position: &Position) -> usize {
+    let mut current_line = 0;
+    let mut utf16_char_offset = 0;
+    let mut byte_offset = 0;
+
+    for (i, c) in text.char_indices() {
+        if current_line == position.line && utf16_char_offset == position.character {
+            return i;
+        }
+
+        if c == '\n' {
+            current_line += 1;
+            utf16_char_offset = 0;
+        } else {
+            utf16_char_offset += c.len_utf16() as u32;
+        }
+        byte_offset = i + c.len_utf8();
+    }
+
+    if current_line == position.line && utf16_char_offset == position.character {
+        return byte_offset;
+    }
+
+    text.len()
+}
+
+fn pos_to_ast<'a>(text: &str, pos: &'a Position, ast: &'a AST) -> Option<&'a AST> {
+    let offset = position_to_byte_offset(text, pos);
+
+    ast.find_node_at_position(offset)
 }
 
 fn convert_pest_error_to_diagnostic(
@@ -135,6 +167,65 @@ impl SandServer {
             .publish_diagnostics(uri, Self::generate_diagnostics(&text), None)
             .await;
     }
+
+    async fn parse(&self, url: &Url) -> Result<Document> {
+        use crate::parser::{Rule, SandParser};
+        use pest::Parser as _;
+        use tower_lsp::jsonrpc::{Error, ErrorCode};
+
+        let map = self.document_map.lock().await;
+
+        let text: &String = map.get(url).ok_or(Error {
+            code: ErrorCode::InvalidParams,
+            message: "failed to find text document in our map".into(),
+            data: None,
+        })?;
+
+        let pairs = SandParser::parse(Rule::doc, text).map_err(|err| Error {
+            code: ErrorCode::ParseError,
+            message: err.variant.message().to_string().into(),
+            data: None,
+        })?;
+
+        pairs.try_into().map_err(|_: Vec<ParseError>| Error {
+            code: ErrorCode::ParseError,
+            message: "something were wrong".into(),
+            data: None,
+        })
+    }
+}
+
+mod _doc {
+    pub(crate) const SECTION_DOC: &str = r#"
+The `Section` syntax provides a way to structure documents by creating meaningful divisions within your text. Currently, its primary purpose is to define logical sections, which can optionally include an alias.
+
+Here's a quick breakdown with examples:
+
+```sand
+#sec1# This is an aliased Level 1 Section
+## This is a Level 1 Section without an alias
+#sec2## This is an aliased Level 2 Section, nested under a Level 1 Section
+### This is a Level 2 Section without an alias
+```
+
+In the examples above:
+
+  * The hashes (##) determine the level of the section. Two hashes (##) indicate a Level 1 Section, three hashes (###) indicate a Level 2 Section, and so on.
+  * The optional **`Ident`** (like `sec1` or `sec2`) acts as an **alias** for the section. This alias can be used for quick referencing or navigation within your document.
+  * The content of the section must be on a single line with a line break at the end.
+"#;
+
+    pub(crate) const ALL_DOC: &str = r#"
+test
+    "#;
+
+    pub(crate) const SENTENCE_DOC: &str = r#"
+sen
+    "#;
+
+    pub(crate) const SELECTOR_DOC: &str = r#"
+sel
+    "#;
 }
 
 #[tower_lsp::async_trait]
@@ -155,6 +246,7 @@ impl LanguageServer for SandServer {
                         save: Some(TextDocumentSyncSaveOptions::Supported(true)),
                     },
                 )),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 ..Default::default()
             },
         })
@@ -229,5 +321,89 @@ impl LanguageServer for SandServer {
         self.client
             .publish_diagnostics(params.text_document.uri, Vec::new(), None)
             .await;
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        use tower_lsp::jsonrpc::{Error, ErrorCode};
+
+        let doc = self
+            .parse(&params.text_document_position_params.text_document.uri)
+            .await?;
+
+        let map = self.document_map.lock().await;
+        let text: &String = map
+            .get(&params.text_document_position_params.text_document.uri)
+            .ok_or(Error {
+                code: ErrorCode::InvalidParams,
+                message: "failed to find text document in our map".into(),
+                data: None,
+            })?;
+
+        Ok(pos_to_ast(
+            text,
+            &params.text_document_position_params.position,
+            &doc.ast,
+        )
+        .map(|ast| match &ast.node {
+            NodeKind::Sen(_) => Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: _doc::SENTENCE_DOC.into(),
+                }),
+                range: None,
+            }),
+            NodeKind::All { .. } => Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: _doc::ALL_DOC.into(),
+                }),
+                range: None,
+            }),
+            NodeKind::Section { .. } => Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: _doc::SECTION_DOC.into(),
+                }),
+                range: None,
+            }),
+            NodeKind::Selector { local, .. } => {
+                // どうにかして親を取得
+                let target_ast = if *local {
+                    let parent = doc.ast.find_parent_at_position(position_to_byte_offset(
+                        text,
+                        &params.text_document_position_params.position,
+                    ));
+                    if let Some(parent) = parent {
+                        parent.clone()
+                    } else {
+                        eprintln!("failed to find the parent"); // TODO: error log
+                        return None;
+                    }
+                } else {
+                    doc.ast.clone()
+                };
+
+                let rendered = crate::formatter::render_plain(
+                    &Document {
+                        names: doc.names,
+                        ast: target_ast,
+                    },
+                    &crate::formatter::Selector(ast.clone()),
+                )
+                .join("\n\n---\n\n");
+
+                Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+
+                        value: format!("{rendered}\n\n---\n\n{}", _doc::SELECTOR_DOC),
+                    }),
+
+                    range: None,
+                })
+            }
+            _ => None,
+        })
+        .flatten())
     }
 }
