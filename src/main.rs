@@ -24,7 +24,6 @@ enum Command {
     Lsp,
 
     Completions {
-        #[arg(long)]
         shell: clap_complete::Shell,
     },
 }
