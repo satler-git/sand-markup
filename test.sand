@@ -18,6 +18,8 @@ Sandは複数の言語で表わされる文章の添削や推敲を行なうた�
 
 \#[][] のような構文は文の定義と呼んでいます。
 
+#{{ \n }}
+
 #s2[
     It's called the definition of a sentence.
 ][

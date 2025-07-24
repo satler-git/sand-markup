@@ -110,7 +110,7 @@ fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
         _ => {}
     }
 
-    trim(&s)
+    s.trim().into()
 }
 
 fn trim(s: &str) -> String {
