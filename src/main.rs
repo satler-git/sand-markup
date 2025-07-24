@@ -16,16 +16,29 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Parse and validate it
+    /// Parse and validate the given input file.
+    ///
+    /// Reads the specified file, parses its contents according to the
+    /// grammar rules, and reports any errors or warnings found.
     Parse {
+        /// Path to the input file to be parsed.
+        ///
+        /// Must point to a readable file containing the source to validate.
         #[arg(value_name = "FILE", value_parser)]
         input: PathBuf,
     },
+
+    /// Launch the Language Server Protocol (LSP) server.
+    ///
+    /// Starts the LSP server, allowing IDEs and editors to connect
+    /// for on‑the‑fly diagnostics, completions(to do), and other language features.
     Lsp,
 
-    Completions {
-        shell: clap_complete::Shell,
-    },
+    /// Generate shell completion scripts.
+    ///
+    /// Outputs a shell-specific completion script to stdout.
+    /// Supported shells include Bash, Zsh, Fish, PowerShell, and Elvish.
+    Completions { shell: clap_complete::Shell },
 }
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
