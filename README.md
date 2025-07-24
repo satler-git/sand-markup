@@ -16,3 +16,18 @@ sand parse README.sand # Debug用。パースしたASTを表示
 source <(sand completions zsh) # Zsh向けの補完
 ```
 
+## LSPサーバー
+
+```lua
+vim.lsp.config("sandls",
+  {
+    cmd = { "sand", "lsp" },
+    filetypes = { "sand" },
+    root_markers = { ".git" },
+    settings = {},
+  },
+)
+vim.lsp.config("sandls", {})
+vim.lsp.enable("sandls")
+```
+
