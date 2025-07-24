@@ -175,7 +175,7 @@ fn normalize(s: &str) -> String {
         "]" => "]".to_string(),
         "}" => "}".to_string(),
         "\\" => "\\".to_string(),
-        other => format!("\\{}", other),
+        other => format!("\\{other}"),
     })
     .into_owned()
 }
