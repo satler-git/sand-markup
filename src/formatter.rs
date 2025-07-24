@@ -24,11 +24,11 @@ impl TryFrom<(&Document, Pairs<'_, Rule>)> for Selector {
 }
 
 // localでもDocumentの中のASTだけ差し替えるだけでいいはず
-pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
+pub fn render_plain(doc: &Document, sel: &Selector, markdown: bool) -> Vec<String> {
     let (target_ast, target_name) = select(doc, sel);
     if let Some(target_name) = target_name {
         vec![
-            to_plain(target_ast, (target_name, &doc.names[target_name]))
+            to_plain(target_ast, (target_name, &doc.names[target_name]), markdown)
                 .lines()
                 .map(trim)
                 .collect::<Vec<_>>()
@@ -39,7 +39,7 @@ pub fn render_plain(doc: &Document, sel: &Selector) -> Vec<String> {
             .iter()
             .enumerate()
             .map(|(index, name)| {
-                to_plain(target_ast, (index, name))
+                to_plain(target_ast, (index, name), markdown)
                     .lines()
                     .map(trim)
                     .collect::<Vec<_>>()
@@ -92,7 +92,7 @@ fn select<'a>(doc: &'a Document, sel: &'a Selector) -> (&'a AST, Option<usize>) 
     }
 }
 
-fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
+fn to_plain(ast: &AST, (name_i, name): (usize, &str), markdown: bool) -> String {
     let mut s = String::new();
 
     match &ast.node {
@@ -110,14 +110,28 @@ fn to_plain(ast: &AST, (name_i, name): (usize, &str)) -> String {
             }
         }
         crate::parser::NodeKind::Section {
-            // TODO: markdownではsection動作だけ変えればいい？
             children,
+            level,
+            content,
             ..
-        }
-        | crate::parser::NodeKind::Top { children, .. } => {
+        } => {
+            if markdown {
+                s += "\n\n";
+                s += &"#".repeat(*level);
+                s += " ";
+                s += content;
+                s += "\n\n";
+            }
+
             for ci in children {
                 s += " ";
-                s += &to_plain(ci, (name_i, name));
+                s += &to_plain(ci, (name_i, name), markdown);
+            }
+        }
+        crate::parser::NodeKind::Top { children, .. } => {
+            for ci in children {
+                s += " ";
+                s += &to_plain(ci, (name_i, name), markdown);
             }
         }
         _ => {}

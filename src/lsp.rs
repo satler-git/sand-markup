@@ -474,6 +474,7 @@ impl LanguageServer for SandServer {
                         ast: target_ast,
                     },
                     &crate::formatter::Selector(ast.clone()),
+                    false,
                 )
                 .join("\n\n---\n\n");
 
