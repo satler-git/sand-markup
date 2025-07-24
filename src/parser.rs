@@ -12,7 +12,7 @@ pub struct Document {
     pub ast: AST,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -28,7 +28,7 @@ impl From<pest::Span<'_>> for Span {
 }
 
 use thiserror::Error;
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Hash, PartialEq, Eq)]
 pub enum ParseError {
     #[error("names are defined more than once")]
     MultipleNameDefine(Span),
@@ -44,7 +44,7 @@ pub enum ParseError {
     Selector(SelectorError, Span),
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Hash, PartialEq, Eq)]
 pub enum SelectorError {
     #[error("the last keyword is not dot or names")]
     LastIsNotDotOrName,
@@ -69,9 +69,9 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 span: None,
             },
         }];
-        let mut names: Option<Vec<String>> = None;
+        let mut names: Option<(Span, Vec<String>)> = None;
 
-        let mut errs = vec![];
+        let mut errs = FxHashSet::default();
 
         let root = pairs.next().unwrap();
 
@@ -82,8 +82,9 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
 
             match pair.as_rule() {
                 Rule::PartName => {
-                    if names.is_some() {
-                        errs.push(ParseError::MultipleNameDefine(span.clone())); // TODO: これだとdupのと一貫性がないかも
+                    if let Some((prev_span, _)) = names {
+                        errs.insert(ParseError::MultipleNameDefine(prev_span.clone()));
+                        errs.insert(ParseError::MultipleNameDefine(span.clone()));
                     }
                     let ident_list_pair = pair.into_inner().next().unwrap();
 
@@ -96,11 +97,11 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     let mut seen = FxHashSet::default();
                     for name in &raw_names {
                         if !seen.insert(name.clone()) {
-                            errs.push(ParseError::DuplicateNames(name.clone(), span.clone()));
+                            errs.insert(ParseError::DuplicateNames(name.clone(), span.clone()));
                         }
                     }
 
-                    names = Some(raw_names);
+                    names = Some((span, raw_names));
                 }
                 Rule::Section => {
                     let mut inner = pair.into_inner();
@@ -203,6 +204,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     });
                 }
                 Rule::Selector => {
+                    // TODO: ここを関数に切り出してformatterでも再利用
                     let mut inner = pair.into_inner();
 
                     let local = match inner.peek() {
@@ -283,7 +285,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             }
         }
 
-        if let Some(names) = &names {
+        if let Some((_, names)) = &names {
             fn check_conflict_with_names(names: &Vec<String>, ast: &AST) -> Vec<(Span, String)> {
                 let (alias, children) = ast.take_section_like().unwrap();
                 let mut v = vec![];
@@ -300,12 +302,12 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 v
             }
             for (span, name) in check_conflict_with_names(names, &ast[0]) {
-                errs.push(ParseError::AliasConflictWithNames(name, span));
+                errs.insert(ParseError::AliasConflictWithNames(name, span));
             }
         }
 
         // Selectorの妥当性
-        if let Some(names) = &names {
+        if let Some((_, names)) = &names {
             fn check_selector(names: &Vec<String>, top_ast: &AST, ast: &AST) -> Vec<ParseError> {
                 let (_, children) = ast.take_section_like().unwrap();
                 let mut v = vec![];
@@ -375,15 +377,15 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
         }
 
         let names = if let Some(names) = names {
-            names
+            names.1
         } else {
             // エラーを追加してからのほうが優しい
-            errs.push(ParseError::MissingNames);
-            return Err(errs);
+            errs.insert(ParseError::MissingNames);
+            return Err(errs.into_iter().collect());
         };
 
         if !errs.is_empty() {
-            return Err(errs);
+            return Err(errs.into_iter().collect());
         }
 
         Ok(Document {
@@ -452,13 +454,11 @@ fn check_alias_conflict(
     children: &[AST],
     new_index: usize,
     new_span: Span,
-    errs: &mut Vec<ParseError>,
+    errs: &mut FxHashSet<ParseError>,
 ) {
     if let Some(conflict_index) = aliases.insert(alias.to_string(), new_index) {
-        errs.push(ParseError::DuplicateAlias(alias.to_string(), new_span));
-        // TODO:
-        // これだと複数回被ったときに最初と最後以外、2重のエラーが出る
-        errs.push(ParseError::DuplicateAlias(
+        errs.insert(ParseError::DuplicateAlias(alias.to_string(), new_span));
+        errs.insert(ParseError::DuplicateAlias(
             alias.to_string(),
             children[conflict_index].get_span().unwrap(),
         ));
