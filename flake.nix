@@ -125,6 +125,11 @@
               cargo-nextest
 
               rust-bin
+
+              nodejs
+              (tree-sitter.override {
+                webUISupport = true;
+              })
             ];
           };
 

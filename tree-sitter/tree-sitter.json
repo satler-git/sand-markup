@@ -1,0 +1,40 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "sand",
+      "camelcase": "Sand",
+      "title": "Sand",
+      "scope": "source.sand",
+      "file-types": [
+        "sand"
+      ],
+      "injection-regex": "^sand$",
+      "class-name": "TreeSitterSand"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Sand grammar for tree-sitter",
+    "authors": [
+      {
+        "name": "satler",
+        "email": "satler@satler.dev",
+        "url": "https://satler.dev/"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/satler-git/sand-markup"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true,
+    "zig": false
+  }
+}
