@@ -24,7 +24,5 @@
 
 ; === 文字列・エスケープ ===
 ((string) @string)
-((char) @escape)
-((_char) @escape)
 ((non_escaped_string) @string)
 
