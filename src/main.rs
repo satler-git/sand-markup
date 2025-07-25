@@ -92,6 +92,12 @@ pub fn convert_parse_error(file_id: usize, err: &ParseError) -> Diagnostic<usize
                     .with_message("selector syntax is incorrect"),
             ]),
         ParseError::MissingNames => Diagnostic::error().with_message("names are not defined"),
+        ParseError::NumberOfSentences(span) => Diagnostic::error()
+            .with_message("the number of sentences does not match the number of names")
+            .with_labels(vec![
+                Label::primary(file_id, span.start..span.end)
+                    .with_message("the number of this sentences is incorrect"),
+            ]),
     }
 }
 

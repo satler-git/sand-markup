@@ -42,6 +42,8 @@ pub enum ParseError {
     MissingNames,
     #[error("selector is incorrect: {0}")]
     Selector(SelectorError, Span),
+    #[error("the number of sentences does not match the number of names.")]
+    NumberOfSentences(Span),
 }
 
 #[derive(Error, Debug, Hash, PartialEq, Eq)]
@@ -301,6 +303,7 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
         }
 
         if let Some((_, names)) = &names {
+            // TODO: DRY, foldみたいな
             fn check_conflict_with_names(names: &Vec<String>, ast: &AST) -> Vec<(Span, String)> {
                 let (alias, children) = ast.take_section_like().unwrap();
                 let mut v = vec![];
@@ -318,6 +321,27 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
             }
             for (span, name) in check_conflict_with_names(names, &ast[0]) {
                 errs.insert(ParseError::AliasConflictWithNames(name, span));
+            }
+        }
+
+        if let Some((_, names)) = &names {
+            fn check_sen_len(names: usize, ast: &AST) -> Vec<Span> {
+                let (_, children) = ast.take_section_like().unwrap();
+                let mut errs: Vec<Span> = vec![];
+                for p in children {
+                    if let NodeKind::Section { .. } = &p.node {
+                        errs.extend(check_sen_len(names, p));
+                    }
+                    if let NodeKind::Sen(sentences) = &p.node {
+                        if sentences.len() != names {
+                            errs.push(p.get_span());
+                        }
+                    }
+                }
+                errs
+            }
+            for span in check_sen_len(names.len(), &ast[0]) {
+                errs.insert(ParseError::NumberOfSentences(span));
             }
         }
 

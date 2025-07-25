@@ -100,6 +100,7 @@ fn convert_parse_error_to_diagnostic(file_content: &str, error: ParseError) -> D
         | ParseError::DuplicateNames(_, span)
         | ParseError::DuplicateAlias(_, span)
         | ParseError::AliasConflictWithNames(_, span)
+        | ParseError::NumberOfSentences(span)
         | ParseError::Selector(_, span) => (span.clone(), error.to_string()),
         ParseError::MissingNames => (Span { start: 0, end: 1 }, error.to_string()),
     };
