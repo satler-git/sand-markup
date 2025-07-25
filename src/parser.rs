@@ -694,7 +694,7 @@ Content
     #[test]
     fn parse_apply_all_and_sentences_and_selector() {
         let doc = r#"
-#(en)
+#(en, ja)
 #hello# Section
 
 A section.
