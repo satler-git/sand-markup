@@ -275,8 +275,8 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                 _ => (),
             }
 
-            if let Some(to_add) = to_push_at_last {
-                if let Some(last) = ast.last_mut() {
+            if let Some(to_add) = to_push_at_last
+                && let Some(last) = ast.last_mut() {
                     let (_, a, v) = last.take_mut_section_like().unwrap();
 
                     if let Some(ref alias) = to_add.meta.alias {
@@ -285,7 +285,6 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
 
                     v.push(to_add);
                 }
-            }
         }
 
         while ast.len() > 1 {
@@ -332,11 +331,10 @@ impl TryFrom<Pairs<'_, Rule>> for Document {
                     if let NodeKind::Section { .. } = &p.node {
                         errs.extend(check_sen_len(names, p));
                     }
-                    if let NodeKind::Sen(sentences) = &p.node {
-                        if sentences.len() != names {
+                    if let NodeKind::Sen(sentences) = &p.node
+                        && sentences.len() != names {
                             errs.push(p.get_span());
                         }
-                    }
                 }
                 errs
             }
